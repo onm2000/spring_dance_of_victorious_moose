@@ -1,3 +1,6 @@
+import torch
+
+
 def _calc_padding(dilation, kernel_size):
     padding = dilation * (kernel_size - 1) / 2
     int_padding = int(padding)
@@ -5,7 +8,7 @@ def _calc_padding(dilation, kernel_size):
     return int_padding
 
 
-def _move_from_end(x, dim):
+def _unpack_from_convolution(x, batch_size):
     """
     Moves the last dimension to the desired position while preserving ordering of the others.
 
@@ -21,23 +24,19 @@ def _move_from_end(x, dim):
     x : :class:`torch.Tensor`
         Permuted tensor
     """
-    N = len(x.shape)
-    if dim < 0:
-        dim = N + dim
-    permute_indices = list(range(N-1))
-    permute_indices.insert(dim, N-1)
-    return x.permute(permute_indices)
+    x = torch.transpose(x, 1, 2)
+    xs = x.shape
+    num_N = int(xs[0] / batch_size)
+    x = x.reshape((batch_size, num_N) +  xs[1:])
+    return x
 
 
-def _move_to_end(x, dim):
+def _pack_for_convolution(x):
     """
     Moves a specified dimension to the end.
 
     """
-    N = len(x.shape)
-    if dim < 0:
-        dim = N + dim
-    permute_indices = list(range(N))
-    permute_indices.remove(dim)
-    permute_indices.append(dim)
-    return x.permute(permute_indices)
+    xs = x.shape
+    x = x.reshape((xs[0] * xs[1],) + xs[2:])
+    x = torch.transpose(x, 1, 2)
+    return x
