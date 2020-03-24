@@ -132,6 +132,7 @@ class DrugProteinDataset(Dataset):
         adj_mat = torch.zeros(max_size, max_size, self.num_edge_features)
         edge_features = torch.LongTensor(edge_features)
         adj_mat[edge_features[:, 0], edge_features[:, 2], edge_features[:, 1]] = 1.
+        adj_mat = adj_mat.float()
         return adj_mat
 
     def need_kekulize(self, mol):
@@ -154,7 +155,7 @@ class MergeSnE1(object):
     def __init__(self):
         super(MergeSnE1, self).__init__()
 
-    def call(self, sample):
+    def __call__(self, sample):
         embedding = sample['prot_embedding']
         nodes = sample['node_features']
         N_resid = embedding.shape[0]
