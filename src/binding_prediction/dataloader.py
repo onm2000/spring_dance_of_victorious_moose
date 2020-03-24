@@ -18,15 +18,15 @@ class DrugProteinDataset(Dataset):
             and the binding type (FIX?)
         protein_embedding_folder (string) : Template for file containing embeddings.
         """
-        data = np.genfromtxt(datafile)
-        self.full_data = data
+        super(DrugProteinDataset, self).__init__()
+        self.all_drugs, self.all_uniprot_ids = self._load_datafile(datafile)
         self.protein_embedding_template = protein_embedding_template
-        self.protein_uniprot_ids, prot_invs = np.unique(data[:, 0], return_inverse=True)
-        self.drugs, drug_invs = np.unique(data[:, 1], return_inverse=True)
+        self.unique_uniprot_ids, prot_invs = np.unique(self.all_uniprot_ids, return_inverse=True)
+        self.unique_drugs, drug_invs = np.unique(self.all_drugs, return_inverse=True)
         self.multiple_bond_types
 
         # Build interaction matrix
-        self._build_interaction_matrix()
+        # self._build_interaction_matrix(drug_invs, prot_invs)
         self._build_dataset_info()
         self.precompute = precompute
         if precompute:
@@ -37,7 +37,8 @@ class DrugProteinDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        prot_id, smiles = self.full_data[idx]
+        smiles = self.all_drugs[idx]
+        prot_id = self.all_uniprot_ids[idx]
         if self.precompute:
             nodes, edges = self.drug_graphs[smiles]
             embedding = self.prot_embeddings[smiles]
@@ -54,6 +55,18 @@ class DrugProteinDataset(Dataset):
             sample = self.transform(sample)
 
         return sample
+
+    def _load_datafile(self, datafile):
+        drugs_smiles = []
+        protein_uniprots = []
+        with open(datafile) as f:
+            f.readline()
+            while True:
+                line = f.readline()
+                split_line = line.split()
+                drugs_smiles.append(split_line[1])
+                protein_uniprots.append(split_line[4])
+        return drugs_smiles, protein_uniprots
 
     def _build_interaction_matrix(self, drug_invs, prot_invs):
         M = np.max(prot_invs) + 1
@@ -128,3 +141,20 @@ def onehot(idx, len):
     z = [0 for _ in range(len)]
     z[idx] = 1
     return z
+
+
+class MergeSnE1(object):
+    def __init__(self):
+        super(MergeSnE1, self).__init__()
+
+    def call(self, sample):
+        embedding = sample['prot_embedding']
+        nodes = sample['node_features']
+        N_resid = embedding.shape[0]
+        N_nodes = nodes.shape[0]
+        nodes_expanded = torch.stack([nodes] * N_resid, dim=1)
+        embed_expanded = torch.stack([embedding] * N_nodes, dim=0)
+        full_features = torch.cat((nodes_expanded, embed_expanded), dim=2)
+
+        new_sample = {'features': full_features, 'adj_mat': sample['adj_mat']}
+        return new_sample
