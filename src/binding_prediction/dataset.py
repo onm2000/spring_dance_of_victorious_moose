@@ -11,7 +11,7 @@ class DrugProteinDataset(Dataset):
     Datase containing drugs, protein IDs, and whether or not they bind.
     """
 
-    def __init__(self, datafile, protein_embedding_template, multiple_bond_types=False, precompute=True):
+    def __init__(self, datafile, protein_embedding_template, multiple_bond_types=False, precompute=True, transform=None):
         """
         Args:
             datafile (string) : Data file that has the uniprot ids, smiles strings,
@@ -23,7 +23,8 @@ class DrugProteinDataset(Dataset):
         self.protein_embedding_template = protein_embedding_template
         self.unique_uniprot_ids, prot_invs = np.unique(self.all_uniprot_ids, return_inverse=True)
         self.unique_drugs, drug_invs = np.unique(self.all_drugs, return_inverse=True)
-        self.multiple_bond_types
+        self.multiple_bond_types = multiple_bond_types
+        self.num_edge_features = 3
 
         # Build interaction matrix
         # self._build_interaction_matrix(drug_invs, prot_invs)
@@ -33,6 +34,8 @@ class DrugProteinDataset(Dataset):
             self.compute_graphs()
             self.load_embeddings()
 
+        self.transform = transform
+
     def __len__(self):
         return len(self.data)
 
@@ -41,17 +44,17 @@ class DrugProteinDataset(Dataset):
         prot_id = self.all_uniprot_ids[idx]
         if self.precompute:
             nodes, edges = self.drug_graphs[smiles]
-            embedding = self.prot_embeddings[smiles]
+            embedding = self.prot_embeddings[prot_id]
         else:
-            nodes, edges, __ = self.build_graph(smiles)
+            nodes, edges, __ = self._build_drug_graph(smiles)
             embedding = self.get_prot_embedding(prot_id)
         adj_mat = self._graph_to_adj_mat(edges)
-        if self.multiple_bond_types:
+        if not self.multiple_bond_types:
             adj_mat = torch.sum(adj_mat, dim=2)
 
         sample = {'node_features': nodes, 'adj_mat': adj_mat, 'prot_embedding': embedding}
 
-        if self.transfom:
+        if self.transform:
             sample = self.transform(sample)
 
         return sample
@@ -63,6 +66,8 @@ class DrugProteinDataset(Dataset):
             f.readline()
             while True:
                 line = f.readline()
+                if not line:
+                    break
                 split_line = line.split()
                 drugs_smiles.append(split_line[1])
                 protein_uniprots.append(split_line[4])
@@ -75,17 +80,17 @@ class DrugProteinDataset(Dataset):
 
     def compute_graphs(self):
         self.drug_graphs = {}
-        for drug_smiles in self.drugs:
-            nodes, edges, __ = self.build_graph(drug_smiles)
+        for drug_smiles in self.unique_drugs:
+            nodes, edges, __ = self._build_drug_graph(drug_smiles)
             self.drug_graphs[drug_smiles] = (nodes, edges)
 
     def load_embeddings(self):
         self.prot_embeddings = {}
-        for prot_id in self.protein_uniprot_ids:
+        for prot_id in self.unique_uniprot_ids:
             self.prot_embeddings[prot_id] = self.get_prot_embedding(prot_id)
 
     def get_prot_embedding(self, prot_id):
-        return np.load(self.protein_embedding_template % prot_id)
+        return np.loadtxt(self.protein_embedding_template % prot_id)
 
     def _build_drug_graph(self, smiles):
         """
@@ -110,19 +115,21 @@ class DrugProteinDataset(Dataset):
         for atom in mol.GetAtoms():
             nodes.append(onehot(self.dataset_info['atom_types'].index(atom.GetSymbol()), len(self.dataset_info['atom_types'])))
 
+        nodes = torch.tensor(nodes)
+        edges = torch.tensor(edges)
+
         return nodes, edges, mol
 
     def _build_dataset_info(self):
-        self.dataset_info = {'atom_types': ["H", "C", "N", "O", "F"],
-                             'maximum_valence': {0: 1, 1: 4, 2: 3, 3: 2, 4: 1},
-                             'number_to_atom': {0: "H", 1: "C", 2: "N", 3: "O", 4: "F"},
-                             'bucket_sizes': np.array(list(range(4, 28, 2)) + [29])
+        self.dataset_info = {'atom_types': ["H", "C", "N", "O", "F", "S"]
                              }
 
         self.bond_dict = {'SINGLE': 0, 'DOUBLE': 1, 'TRIPLE': 2, "AROMATIC": 3}
 
     def _graph_to_adj_mat(self, edge_features):
-        adj_mat = torch.zeros(self.max_size, self.max_size, self.num_edge_features)
+        max_size = max(torch.max(edge_features[:, 0]), torch.max(edge_features[:, 2])) + 1
+        print(max_size, 'maxsize')
+        adj_mat = torch.zeros(max_size, max_size, self.num_edge_features)
         edge_features = torch.LongTensor(edge_features)
         adj_mat[edge_features[:, 0], edge_features[:, 2], edge_features[:, 1]] = 1.
         return adj_mat
