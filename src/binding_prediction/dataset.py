@@ -11,7 +11,7 @@ class DrugProteinDataset(Dataset):
     Datase containing drugs, protein IDs, and whether or not they bind.
     """
 
-    def __init__(self, datafile, protein_embedding_template, multiple_bond_types=False, precompute=True, transform=None):
+    def __init__(self, datafile, protein_embedding_template, multiple_bond_types=False, precompute=True, transform=None, prob_fake=0.0, fake_dist=None):
         """
         Args:
             datafile (string) : Data file that has the uniprot ids, smiles strings,
@@ -25,6 +25,14 @@ class DrugProteinDataset(Dataset):
         self.unique_drugs, drug_invs = np.unique(self.all_drugs, return_inverse=True)
         self.multiple_bond_types = multiple_bond_types
         self.num_edge_features = 3
+        self.prob_fake = prob_fake
+
+        if fake_dist is None:
+            def fake_dist():
+                drug_idx = np.random.choice(self.all_drugs)
+                embed_idx = np.random.choice(self.all_uniprot_ids)
+                return drug_idx, embed_idx
+        self.fake_dist = fake_dist
 
         # Build interaction matrix
         # self._build_interaction_matrix(drug_invs, prot_invs)
@@ -40,19 +48,27 @@ class DrugProteinDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        smiles = self.all_drugs[idx]
-        prot_id = self.all_uniprot_ids[idx]
+        is_true = (np.random.rand() < (1. - self.prob_fake))
+        if is_true:
+            drug_idx = prot_idx = idx
+        else:
+            drug_idx, prot_idx = self.fake_dist()
+
+        smiles = self.all_drugs[drug_idx]
+        prot_id = self.all_uniprot_ids[prot_idx]
+
         if self.precompute:
             nodes, edges = self.drug_graphs[smiles]
             embedding = self.prot_embeddings[prot_id]
         else:
             nodes, edges, __ = self._build_drug_graph(smiles)
             embedding = self.get_prot_embedding(prot_id)
+
         adj_mat = self._graph_to_adj_mat(edges)
         if not self.multiple_bond_types:
             adj_mat = torch.sum(adj_mat, dim=2)
 
-        sample = {'node_features': nodes, 'adj_mat': adj_mat, 'prot_embedding': embedding}
+        sample = {'node_features': nodes, 'adj_mat': adj_mat, 'prot_embedding': embedding, 'is_true': is_true}
 
         if self.transform:
             sample = self.transform(sample)
@@ -90,7 +106,8 @@ class DrugProteinDataset(Dataset):
             self.prot_embeddings[prot_id] = self.get_prot_embedding(prot_id)
 
     def get_prot_embedding(self, prot_id):
-        return np.loadtxt(self.protein_embedding_template % prot_id)
+        prot_embedding = np.loadtxt(self.protein_embedding_template % prot_id)
+        return torch.from_numpy(prot_embedding).float()
 
     def _build_drug_graph(self, smiles):
         """
@@ -115,7 +132,7 @@ class DrugProteinDataset(Dataset):
         for atom in mol.GetAtoms():
             nodes.append(onehot(self.dataset_info['atom_types'].index(atom.GetSymbol()), len(self.dataset_info['atom_types'])))
 
-        nodes = torch.tensor(nodes)
+        nodes = torch.tensor(nodes).float()
         edges = torch.tensor(edges)
 
         return nodes, edges, mol
@@ -128,7 +145,6 @@ class DrugProteinDataset(Dataset):
 
     def _graph_to_adj_mat(self, edge_features):
         max_size = max(torch.max(edge_features[:, 0]), torch.max(edge_features[:, 2])) + 1
-        print(max_size, 'maxsize')
         adj_mat = torch.zeros(max_size, max_size, self.num_edge_features)
         edge_features = torch.LongTensor(edge_features)
         adj_mat[edge_features[:, 0], edge_features[:, 2], edge_features[:, 1]] = 1.

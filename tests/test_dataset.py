@@ -14,11 +14,29 @@ class TestDrugProteinDataset(object):
         assert(first_element['node_features'].shape[0] == 155)
         assert(first_element['adj_mat'].shape[0] == 155)
         assert(first_element['adj_mat'].shape[1] == 155)
+        assert(first_element['is_true'])
 
         if multiple_bond_types:
             assert(len(first_element['adj_mat'].shape) == 3)
         else:
             assert(len(first_element['adj_mat'].shape) == 2)
+
+    @pytest.mark.parametrize('precompute', [True, False])
+    def test_sampling(self, precompute):
+        def fake_dist():
+            return 1, 3
+        rand_dset = DrugProteinDataset("data/sample_dataset.txt", 'data/%s.txt',
+                                       precompute=True, prob_fake=1., fake_dist=fake_dist)
+        ref_dset = DrugProteinDataset("data/sample_dataset.txt", 'data/%s.txt',
+                                      precompute=True, prob_fake=0.)
+        fake_element = rand_dset[0]
+        true_element_1 = ref_dset[1]
+        true_element_3 = ref_dset[3]
+
+        assert(torch.norm(fake_element['node_features'] - true_element_1['node_features']) < 1e-6)
+        assert(torch.norm(fake_element['adj_mat'] - true_element_1['adj_mat']) < 1e-6)
+        assert(torch.norm(fake_element['prot_embedding'] - true_element_3['prot_embedding']) < 1e-6)
+        assert(fake_element['is_true'] is False)
 
 
 class TestTransform(object):
