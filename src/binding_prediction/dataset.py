@@ -68,7 +68,7 @@ class DrugProteinDataset(Dataset):
         if not self.multiple_bond_types:
             adj_mat = torch.sum(adj_mat, dim=2)
 
-        sample = {'node_features': nodes, 'adj_mat': adj_mat, 'prot_embedding': embedding, 'is_true': is_true}
+        sample = {'node_features': nodes, 'adj_mat': adj_mat, 'prot_embedding': embedding, 'is_true': int(is_true)}
 
         if self.transform:
             sample = self.transform(sample)
@@ -161,12 +161,6 @@ class DrugProteinDataset(Dataset):
         return False
 
 
-def onehot(idx, len):
-    z = [0 for _ in range(len)]
-    z[idx] = 1
-    return z
-
-
 class MergeSnE1(object):
     def __init__(self):
         super(MergeSnE1, self).__init__()
@@ -179,6 +173,64 @@ class MergeSnE1(object):
         nodes_expanded = torch.stack([nodes] * N_resid, dim=1)
         embed_expanded = torch.stack([embedding] * N_nodes, dim=0)
         full_features = torch.cat((nodes_expanded, embed_expanded), dim=2)
+        
+        sample['features'] = full_features
+        return sample
 
-        new_sample = {'features': full_features, 'adj_mat': sample['adj_mat']}
-        return new_sample
+
+def onehot(idx, len):
+    z = [0 for _ in range(len)]
+    z[idx] = 1
+    return z
+
+
+def collate_fn(batch):
+    collated_batch = {}
+    for prop in batch[0].keys():
+        if prop == 'adj_mat':
+            edge_mat = True
+        else:
+            edge_mat = False
+        collated_batch[prop] = _batch_stack([mol[prop] for mol in batch], edge_mat=edge_mat)
+    return collated_batch
+
+
+def _batch_stack(props, edge_mat=False):
+    """
+    Stack a list of torch.tensors so they are padded to the size of the
+    largest tensor along each axis.  Adapted from the cormorant library, and
+    initially written by Brandon Anderson.
+
+    Parameters
+    ----------
+    props : list of Pytorch Tensors
+        Pytorch tensors to stack
+    edge_mat : bool
+        The included tensor refers to edge properties, and therefore needs
+        to be stacked/padded along two axes instead of just one.
+
+    Returns
+    -------
+    props : Pytorch tensor
+        Stacked pytorch tensor.
+
+    Notes
+    -----
+    TODO : Review whether the behavior when elements are not tensors is safe.
+    """
+    if not torch.is_tensor(props[0]):
+        props = [torch.tensor(pi) for pi in props]
+    if props[0].dim() == 0:
+        return torch.stack(props)
+    elif not edge_mat:
+        return torch.nn.utils.rnn.pad_sequence(props, batch_first=True, padding_value=0)
+    else:
+        max_atoms = max([len(p) for p in props])
+        max_shape = (len(props), max_atoms, max_atoms) + props[0].shape[2:]
+        padded_tensor = torch.zeros(max_shape, dtype=props[0].dtype, device=props[0].device)
+
+        for idx, prop in enumerate(props):
+            this_atoms = len(prop)
+            padded_tensor[idx, :this_atoms, :this_atoms] = prop
+
+        return padded_tensor
