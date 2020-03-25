@@ -2,11 +2,12 @@ import torch
 import argparse
 import os
 import pickle
-import logging
+import datetime
 from binding_prediction.models import GraphAndConvStack
 from binding_prediction.dataset import DrugProteinDataset
 from torch import optim
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 
 
 def _parse_args():
@@ -50,9 +51,18 @@ def run_model_on_batch(model, batch):
     ######################################
 
 
+def initialize_logging(root_dir='./', logging_path=None):
+    if logging_path is None:
+        basename = "logdir"
+        suffix = datetime.datetime.now().strftime("%y%m%d_%H%M%S")
+        logging_path = "_".join([basename, suffix])
+    full_path = root_dir + logging_path
+    writer = SummaryWriter(full_path)
+    return writer
+
+
 def main():
     args = _parse_args()
-    logging.basicConfig(filename=args.dir + '/training.log', filemode='a', level=logging.DEBUG)
 
     if args.cuda:
         device = 'cuda'
@@ -61,6 +71,7 @@ def main():
 
     if not os.path.exists(args.dir):
         os.makedirs(args.dir)
+    writer = initialize_logging(args.dir, '/logs/')
 
     # Save the construction arguments for future reference.
     with open(args.dir + '/training_args.pkl', 'wb') as f:
@@ -78,13 +89,13 @@ def main():
     out_channels = 1
     model = GraphAndConvStack(in_channels, args.hidden_channels, out_channels)
     model = model.to(device=device)
-    logging.info("Initialized Model.")
+    writer.add_text("Initialized Model.")
 
     if os.path.isfile(args.dir + '/model_best.pt'):
-        logging.info("Previous Model found.  Attempting to load previous best model...")
+        writer.add_text("Previous Model found.  Attempting to load previous best model...")
         model_param_dict = torch.load('models/model_best.pt')
         model.load_state_dict(model_param_dict)
-        logging.info("Succesfully loaded previous model")
+        writer.add_text("Succesfully loaded previous model")
 
     optimizer = optim.AdamW(model.parameters(), lr=args.lr)
     best_valid_loss = 1E8
@@ -101,7 +112,7 @@ def main():
             optimizer.step()
 
             if i % 100 == 0:
-                logging.info("Batch {}/{}.  Batch loss: {}".format(i, len(train_dataloader), loss))
+                print.info("Batch {}/{}.  Batch loss: {}".format(i, len(train_dataloader), loss))
 
         model.eval()
         total_valid_loss = 0
@@ -113,9 +124,12 @@ def main():
 
         avg_train_loss = total_train_loss / len(train_dataset)
         avg_valid_loss = total_valid_loss / len(valid_dataset)
-        logging.info("Epoch {} Complete. Train loss: {}.  Valid loss: {}.".format(avg_train_loss, avg_valid_loss))
+        print("Epoch {} Complete. Train loss: {}.  Valid loss: {}.".format(avg_train_loss, avg_valid_loss))
+        writer.add_scalar('training_loss', avg_train_loss)
+        writer.add_scalar('validation_loss', avg_valid_loss)
+
         torch.save(model.state_dict(), 'models/model_current.pt')
         if avg_valid_loss < best_valid_loss:
-            logging.info("Best validation loss achieved!")
+            writer.add_text("Best validation loss achieved at %d." % n)
             torch.save(model.state_dict(), 'models/model_best.pt')
             best_valid_loss = avg_valid_loss
