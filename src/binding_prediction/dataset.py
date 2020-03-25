@@ -4,6 +4,22 @@ from rdkit import Chem
 import torch
 import numpy as np
 import scipy.sparse as sps
+import pandas as pd
+
+
+def _load_datafile(datafile):
+    """
+    Parameters
+    ----------
+    datafile : str
+       File path.  Assumes that the file is only two columns
+          1. Drug INCHI string
+          2. Uniprot id
+    """
+    df = pd.read_table(datafile, header=None)
+    drug_inchi = np.array(df[0]) # first column is inchi key
+    protein_seqs = np.array(df[1]) # second column is sequence
+    return drug_inchi, protein_seqs
 
 
 class DrugProteinDataset(Dataset):
@@ -11,7 +27,8 @@ class DrugProteinDataset(Dataset):
     Datase containing drugs, protein IDs, and whether or not they bind.
     """
 
-    def __init__(self, datafile, protein_embedding_template, multiple_bond_types=False, precompute=True, transform=None):
+    def __init__(self, datafile, protein_embedding_template, multiple_bond_types=False,
+                 precompute=True, transform=None):
         """
         Args:
             datafile (string) : Data file that has the uniprot ids, smiles strings,
@@ -19,7 +36,7 @@ class DrugProteinDataset(Dataset):
         protein_embedding_folder (string) : Template for file containing embeddings.
         """
         super(DrugProteinDataset, self).__init__()
-        self.all_drugs, self.all_uniprot_ids = self._load_datafile(datafile)
+        self.all_drugs, self.all_uniprot_ids = _load_datafile(datafile)
         self.protein_embedding_template = protein_embedding_template
         self.unique_uniprot_ids, prot_invs = np.unique(self.all_uniprot_ids, return_inverse=True)
         self.unique_drugs, drug_invs = np.unique(self.all_drugs, return_inverse=True)
@@ -59,20 +76,6 @@ class DrugProteinDataset(Dataset):
 
         return sample
 
-    def _load_datafile(self, datafile):
-        drugs_smiles = []
-        protein_uniprots = []
-        with open(datafile) as f:
-            f.readline()
-            while True:
-                line = f.readline()
-                if not line:
-                    break
-                split_line = line.split()
-                drugs_smiles.append(split_line[1])
-                protein_uniprots.append(split_line[4])
-        return drugs_smiles, protein_uniprots
-
     def _build_interaction_matrix(self, drug_invs, prot_invs):
         M = np.max(prot_invs) + 1
         N = np.max(drug_invs) + 1
@@ -96,7 +99,7 @@ class DrugProteinDataset(Dataset):
         """
         Builds a molecular graph form a smiles string.  Taken from [FIND SOURCE!]
         """
-        mol = Chem.MolFromSmiles(smiles)
+        mol = Chem.inchi.MolFromInchi(smiles)
         if mol is None:
             return [], []
         # Kekulize it
