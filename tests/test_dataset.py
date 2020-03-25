@@ -6,9 +6,9 @@ from binding_prediction.utils import get_data_path
 
 class TestDataUtils(object):
     def test_load(self):
-        fname = get_data_path('data/example.txt')
+        fname = get_data_path('example.txt')
         smiles, prots = _load_datafile(fname)
-        assert(smiles[0] == 'DMDVEPIJCJGHPE-UHFFFAOYSA-K')
+        assert(smiles[0] == 'CC(=O)OC(CC(=O)[O-])C[N+](C)(C)C')
         exp = ('MVLAWPDRYSSVQLELPEGATVAEAVATSGLALQQAPAAHAVHGLVARPEQ'
                'VLRDGDRVELLRPLLLDPKEARRRRAGPSKKAGHNS')
         assert(prots[1] == exp)
@@ -21,10 +21,9 @@ class TestDrugProteinDataset(object):
         dset = DrugProteinDataset("data/example.txt", precompute=precompute, 
                 multiple_bond_types=multiple_bond_types)
         first_element = dset[0]
-        assert(first_element['protein'].shape == (10, 4))
-        assert(first_element['node_features'].shape[0] == 155)
-        assert(first_element['adj_mat'].shape[0] == 155)
-        assert(first_element['adj_mat'].shape[1] == 155)
+        assert(first_element['node_features'].shape[0] == 14)
+        assert(first_element['adj_mat'].shape[0] == 14)
+        assert(first_element['adj_mat'].shape[1] == 14)
         assert(first_element['is_true'])
 
         if multiple_bond_types:
@@ -46,7 +45,7 @@ class TestDrugProteinDataset(object):
 
         assert(torch.norm(fake_element['node_features'] - true_element_1['node_features']) < 1e-6)
         assert(torch.norm(fake_element['adj_mat'] - true_element_1['adj_mat']) < 1e-6)
-        assert(torch.norm(fake_element['protein'] - true_element_3['protein']) < 1e-6)
+        assert(fake_element['protein'] == true_element_3['protein'])
         assert(fake_element['is_true'] == 0)
 
 

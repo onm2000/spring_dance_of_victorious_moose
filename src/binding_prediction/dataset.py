@@ -18,8 +18,6 @@ def _load_datafile(datafile):
     """
     df = pd.read_table(datafile, header=None, delim_whitespace=True)
     drug_inchi = np.array(df[0])  # first column is inchi key
-    print(drug_inchi)
-    print(df)
     protein_seqs = np.array(df[1])  # second column is sequence
     return drug_inchi, protein_seqs
 
@@ -68,7 +66,6 @@ class DrugProteinDataset(Dataset):
         if self.precompute:
             nodes, edges = self.drug_graphs[smiles]
         else:
-            print(smiles)
             output = self._build_drug_graph(smiles)
             nodes, edges, __ = self._build_drug_graph(smiles)
         adj = self._graph_to_adj_mat(edges)
