@@ -63,6 +63,16 @@ class DrugProteinDataset(Dataset):
     def __len__(self):
         return len(self.data)
 
+    def _preprocess_molecule(self, smiles):
+        if self.precompute:
+            nodes, edges = self.drug_graphs[smiles]
+        else:
+            nodes, edges, __ = self._build_drug_graph(smiles)
+        adj = self._graph_to_adj_mat(edges)
+        if not self.multiple_bond_types:
+            adj = torch.sum(adj, dim=2)
+        return nodes, adj
+
     def __getitem__(self, idx):
         is_true = (np.random.rand() < (1. - self.prob_fake))
         if is_true:
@@ -73,15 +83,7 @@ class DrugProteinDataset(Dataset):
         smiles = self.all_drugs[drug_idx]
         prot = self.all_prots[prot_idx]
 
-        if self.precompute:
-            nodes, edges = self.drug_graphs[smiles]
-
-        else:
-            nodes, edges, __ = self._build_drug_graph(smiles)
-
-        adj_mat = self._graph_to_adj_mat(edges)
-        if not self.multiple_bond_types:
-            adj_mat = torch.sum(adj_mat, dim=2)
+        nodes, adj_mat = _preprocess_molecule(smiles)
 
         sample = {'node_features': nodes, 'adj_mat': adj_mat,
                   'protein': prot, 'is_true': int(is_true)}
@@ -155,6 +157,66 @@ class DrugProteinDataset(Dataset):
             if self.bond_dict[str(bond.GetBondType())] >= 3:
                 return True
         return False
+
+
+class PosDrugProteinDataset(DrugProteinDataset):
+    """ Performs positive only sampling strategy.
+
+    Notes
+    -----
+    Bayesian Personalized Ranking:
+       https://arxiv.org/pdf/1205.2618.pdf
+    """
+    def __init__(self, datafile, protein_embedding_template, multiple_bond_types=False,
+                 precompute=True, transform=None, prob_fake=0.0, fake_dist=None, num_neg=10):
+        super(DrugProteinDataset, self).__init__(
+            datafile, protein_embedding_template, multiple_bond_types=False,
+            precompute=True, transform=None, prob_fake=0.0, fake_dist=None)
+        self.num_neg = num_neg
+
+    def __getitem__(self, idx):
+
+        drug_pos = prot_idx = idx
+        drug_neg = np.random.choice(self.all_drugs)
+
+        smiles_pos = self.all_drugs[drug_idx]
+        smiles_neg = self.all_drugs[drug_neg]
+        prot = self.all_prots[prot_idx]
+
+        pos_nodes, pos_adj = _preprocess_molecule(smiles)
+        neg_nodes, neg_adj = _preprocess_molecule(smiles)
+
+        sample = {'pos_node_features': pos_nodes, 'pos_adj_mat': pos_adj_mat,
+                  'neg_node_features': neg_nodes, 'neg_adj_mat': neg_adj_mat,
+                  'protein': prot, 'is_true': int(is_true)}
+
+        if self.transform:
+            sample = self.transform(sample)
+
+        return sample
+
+    def __iter__(self):
+        """ Need this for multi-GPU support"""
+        worker_info = torch.utils.data.get_worker_info()
+        start = 0
+        end = len(self.pairs)
+
+        if worker_info is None:  # single-process data loading
+            for i in range(end):
+                for _ in range(self.num_neg):
+                    yield self.__getitem__(i)
+        else:
+            worker_id = worker_info.id
+            w = float(worker_info.num_workers)
+            t = (end - start)
+            w = float(worker_info.num_workers)
+            per_worker = int(math.ceil(t / w))
+            worker_id = worker_info.id
+            iter_start = start + worker_id * per_worker
+            iter_end = min(iter_start + per_worker, end)
+            for i in range(iter_start, iter_end):
+                for _ in range(self.num_neg):
+                    yield self.__getitem__(i)
 
 
 class MergeSnE1(object):
