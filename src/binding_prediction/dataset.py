@@ -4,24 +4,41 @@ from rdkit import Chem
 import torch
 import numpy as np
 import scipy.sparse as sps
+import pandas as pd
+
+
+def _load_datafile(datafile):
+    """
+    Parameters
+    ----------
+    datafile : str
+       File path.  Assumes that the file is only two columns
+          1. Drug INCHI string
+          2. Protein sequence
+    """
+    df = pd.read_table(datafile, header=None)
+    drug_inchi = np.array(df[0]) # first column is inchi key
+    protein_seqs = np.array(df[1]) # second column is sequence
+    return drug_inchi, protein_seqs
 
 
 class DrugProteinDataset(Dataset):
     """
-    Datase containing drugs, protein IDs, and whether or not they bind.
+    Database containing drugs, protein IDs, and whether or not they bind.
     """
 
-    def __init__(self, datafile, protein_embedding_template, multiple_bond_types=False, precompute=True, transform=None, prob_fake=0.0, fake_dist=None):
+    def __init__(self, datafile, protein_embedding_template, multiple_bond_types=False,
+                 precompute=True, transform=None, prob_fake=0.0, fake_dist=None):
         """
         Args:
-            datafile (string) : Data file that has the uniprot ids, smiles strings,
+            datafile (string) : Data file that has the protein sequences, smiles strings,
             and the binding type (FIX?)
         protein_embedding_folder (string) : Template for file containing embeddings.
         """
         super(DrugProteinDataset, self).__init__()
-        self.all_drugs, self.all_uniprot_ids = self._load_datafile(datafile)
+        self.all_drugs, self.all_prots = _load_datafile(datafile)
         self.protein_embedding_template = protein_embedding_template
-        self.unique_uniprot_ids, prot_invs = np.unique(self.all_uniprot_ids, return_inverse=True)
+        self.unique_prots, prot_invs = np.unique(self.all_prots, return_inverse=True)
         self.unique_drugs, drug_invs = np.unique(self.all_drugs, return_inverse=True)
         self.multiple_bond_types = multiple_bond_types
         self.num_edge_features = 3
@@ -30,7 +47,7 @@ class DrugProteinDataset(Dataset):
         if fake_dist is None:
             def fake_dist():
                 drug_idx = np.random.choice(self.all_drugs)
-                embed_idx = np.random.choice(self.all_uniprot_ids)
+                embed_idx = np.random.choice(self.all_prots)
                 return drug_idx, embed_idx
         self.fake_dist = fake_dist
 
@@ -40,12 +57,21 @@ class DrugProteinDataset(Dataset):
         self.precompute = precompute
         if precompute:
             self.compute_graphs()
-            self.load_embeddings()
 
         self.transform = transform
 
     def __len__(self):
         return len(self.data)
+
+    def _preprocess_molecule(self, smiles):
+        if self.precompute:
+            nodes, edges = self.drug_graphs[smiles]
+        else:
+            nodes, edges, __ = self._build_drug_graph(smiles)
+        adj = self._graph_to_adj_mat(edges)
+        if not self.multiple_bond_types:
+            adj = torch.sum(adj, dim=2)
+        return nodes, adj
 
     def __getitem__(self, idx):
         is_true = (np.random.rand() < (1. - self.prob_fake))
@@ -55,44 +81,23 @@ class DrugProteinDataset(Dataset):
             drug_idx, prot_idx = self.fake_dist()
 
         smiles = self.all_drugs[drug_idx]
-        prot_id = self.all_uniprot_ids[prot_idx]
+        prot = self.all_prots[prot_idx]
 
-        if self.precompute:
-            nodes, edges = self.drug_graphs[smiles]
-            embedding = self.prot_embeddings[prot_id]
-        else:
-            nodes, edges, __ = self._build_drug_graph(smiles)
-            embedding = self.get_prot_embedding(prot_id)
+        nodes, adj_mat = _preprocess_molecule(smiles)
 
-        adj_mat = self._graph_to_adj_mat(edges)
-        if not self.multiple_bond_types:
-            adj_mat = torch.sum(adj_mat, dim=2)
-
-        sample = {'node_features': nodes, 'adj_mat': adj_mat, 'prot_embedding': embedding, 'is_true': int(is_true)}
+        sample = {'node_features': nodes, 'adj_mat': adj_mat,
+                  'protein': prot, 'is_true': int(is_true)}
 
         if self.transform:
             sample = self.transform(sample)
 
         return sample
 
-    def _load_datafile(self, datafile):
-        drugs_smiles = []
-        protein_uniprots = []
-        with open(datafile) as f:
-            f.readline()
-            while True:
-                line = f.readline()
-                if not line:
-                    break
-                split_line = line.split()
-                drugs_smiles.append(split_line[1])
-                protein_uniprots.append(split_line[4])
-        return drugs_smiles, protein_uniprots
-
     def _build_interaction_matrix(self, drug_invs, prot_invs):
         M = np.max(prot_invs) + 1
         N = np.max(drug_invs) + 1
-        self.interaction_matrix = sps.csr(np.ones(drug_invs.shape), (prot_invs, drug_invs), shape=(M, N))
+        self.interaction_matrix = sps.csr(np.ones(drug_invs.shape),
+                                          (prot_invs, drug_invs), shape=(M, N))
 
     def compute_graphs(self):
         self.drug_graphs = {}
@@ -100,20 +105,11 @@ class DrugProteinDataset(Dataset):
             nodes, edges, __ = self._build_drug_graph(drug_smiles)
             self.drug_graphs[drug_smiles] = (nodes, edges)
 
-    def load_embeddings(self):
-        self.prot_embeddings = {}
-        for prot_id in self.unique_uniprot_ids:
-            self.prot_embeddings[prot_id] = self.get_prot_embedding(prot_id)
-
-    def get_prot_embedding(self, prot_id):
-        prot_embedding = np.loadtxt(self.protein_embedding_template % prot_id)
-        return torch.from_numpy(prot_embedding).float()
-
     def _build_drug_graph(self, smiles):
         """
         Builds a molecular graph form a smiles string.  Taken from [FIND SOURCE!]
         """
-        mol = Chem.MolFromSmiles(smiles)
+        mol = Chem.inchi.MolFromInchi(smiles)
         if mol is None:
             return [], []
         # Kekulize it
@@ -127,10 +123,12 @@ class DrugProteinDataset(Dataset):
         edges = []
         nodes = []
         for bond in mol.GetBonds():
-            edges.append((bond.GetBeginAtomIdx(), self.bond_dict[str(bond.GetBondType())], bond.GetEndAtomIdx()))
+            edges.append((bond.GetBeginAtomIdx(), self.bond_dict[str(bond.GetBondType())],
+                          bond.GetEndAtomIdx()))
             assert self.bond_dict[str(bond.GetBondType())] != 3
         for atom in mol.GetAtoms():
-            nodes.append(onehot(self.dataset_info['atom_types'].index(atom.GetSymbol()), len(self.dataset_info['atom_types'])))
+            nodes.append(onehot(self.dataset_info['atom_types'].index(atom.GetSymbol()),
+                                len(self.dataset_info['atom_types'])))
 
         nodes = torch.tensor(nodes).float()
         edges = torch.tensor(edges)
@@ -161,6 +159,66 @@ class DrugProteinDataset(Dataset):
         return False
 
 
+class PosDrugProteinDataset(DrugProteinDataset):
+    """ Performs positive only sampling strategy.
+
+    Notes
+    -----
+    Bayesian Personalized Ranking:
+       https://arxiv.org/pdf/1205.2618.pdf
+    """
+    def __init__(self, datafile, protein_embedding_template, multiple_bond_types=False,
+                 precompute=True, transform=None, prob_fake=0.0, fake_dist=None, num_neg=10):
+        super(DrugProteinDataset, self).__init__(
+            datafile, protein_embedding_template, multiple_bond_types=False,
+            precompute=True, transform=None, prob_fake=0.0, fake_dist=None)
+        self.num_neg = num_neg
+
+    def __getitem__(self, idx):
+
+        drug_pos = prot_idx = idx
+        drug_neg = np.random.choice(self.all_drugs)
+
+        smiles_pos = self.all_drugs[drug_idx]
+        smiles_neg = self.all_drugs[drug_neg]
+        prot = self.all_prots[prot_idx]
+
+        pos_nodes, pos_adj = _preprocess_molecule(smiles)
+        neg_nodes, neg_adj = _preprocess_molecule(smiles)
+
+        sample = {'pos_node_features': pos_nodes, 'pos_adj_mat': pos_adj_mat,
+                  'neg_node_features': neg_nodes, 'neg_adj_mat': neg_adj_mat,
+                  'protein': prot, 'is_true': int(is_true)}
+
+        if self.transform:
+            sample = self.transform(sample)
+
+        return sample
+
+    def __iter__(self):
+        """ Need this for multi-GPU support"""
+        worker_info = torch.utils.data.get_worker_info()
+        start = 0
+        end = len(self.pairs)
+
+        if worker_info is None:  # single-process data loading
+            for i in range(end):
+                for _ in range(self.num_neg):
+                    yield self.__getitem__(i)
+        else:
+            worker_id = worker_info.id
+            w = float(worker_info.num_workers)
+            t = (end - start)
+            w = float(worker_info.num_workers)
+            per_worker = int(math.ceil(t / w))
+            worker_id = worker_info.id
+            iter_start = start + worker_id * per_worker
+            iter_end = min(iter_start + per_worker, end)
+            for i in range(iter_start, iter_end):
+                for _ in range(self.num_neg):
+                    yield self.__getitem__(i)
+
+
 class MergeSnE1(object):
     def __init__(self):
         super(MergeSnE1, self).__init__()
@@ -179,7 +237,8 @@ class MergeSnE1(object):
 
 
 def onehot(idx, len):
-    z = [0 for _ in range(len)]
+    idx = np.array(idx)  # make sure this is an array
+    z = np.array([0 for _ in range(len)])
     z[idx] = 1
     return z
 
