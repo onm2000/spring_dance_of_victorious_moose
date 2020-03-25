@@ -4,17 +4,17 @@ from .utils import _calc_padding, _unpack_from_convolution, _pack_for_convolutio
 
 
 class GraphAndConv(nn.Module):
-    def __init__(self, input_dim, output_dim, conv_kernel_size, intermediate_dim=None):
+    def __init__(self, in_channels, out_channels, conv_kernel_size=1, intermediate_channels=None):
         super(GraphAndConv, self).__init__()
-        if intermediate_dim is None:
-            intermediate_dim = output_dim
-        self.lin = nn.Linear(2*input_dim, intermediate_dim)
+        if intermediate_channels is None:
+            intermediate_channels = out_channels
+        self.lin = nn.Linear(2*in_channels, intermediate_channels)
         padding = _calc_padding(1, conv_kernel_size)
-        self.conv = nn.Conv1d(intermediate_dim, output_dim, conv_kernel_size, padding=padding)
+        self.conv = nn.Conv1d(intermediate_channels, out_channels, conv_kernel_size, padding=padding)
 
-        self.input_dim = input_dim
-        self.intermediate_dim = intermediate_dim
-        self.output_dim = output_dim
+        self.in_channels = in_channels
+        self.intermediate_channels = intermediate_channels
+        self.out_channels = out_channels
 
     def forward(self, adj, inputs):
         batch_size = inputs.shape[0]
