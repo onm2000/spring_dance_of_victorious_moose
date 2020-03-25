@@ -6,6 +6,8 @@ import datetime
 import torch.nn.functional as F
 from binding_prediction.models import GraphAndConvStack
 from binding_prediction.dataset import DrugProteinDataset
+from binding_prediction.protein import ProteinSequence
+from binding_prediction import language_models
 from torch import optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -29,7 +31,6 @@ class BindingModelNCE(torch.nn.Module):
         Length corresponds to the number of layers.
         If not provided, defaults to 1 for every layer
     """
-
     def __init__(self, in_channels, hidden_channel_list, out_channels,
                  conv_kernel_sizes=None, nonlinearity=None):
         super(BindingModelNCE, self).__init__()
@@ -38,13 +39,29 @@ class BindingModelNCE(torch.nn.Module):
                                            nonlinearity)
         total_number_inputs = sum(hidden_channel_list) + out_channels
         self.final_mix = torch.nn.Linear(total_number_inputs, 1, bias=False)
+        self.lm = None
 
     def forward(self, adj, x):
-        x_all = self.gcs_stack(adj, x)
+        if self.lm is None:
+            raise ValueError('Language model is not initialized!')
+        y = self.lm.extract(x)
+        x_all = self.gcs_stack(adj, y)
         x_all = torch.cat(x_all, dim=-1)
         x_out = self.final_mix(x_all)
         x_out = torch.sum(torch.sum(x_out, dim=2), dim=1)
         return x_out
+
+    def load_language_model(self, cls, path):
+        """
+        Parameters
+        ----------
+        cls : Module name
+            Name of the Language model.
+            (i.e. binding_prediction.language_model.Elmo)
+        path : filepath
+            Filepath of the pretrained model.
+        """
+        self.lm = cls(path)
 
 
 def _parse_args():
@@ -64,6 +81,8 @@ def _parse_args():
                         help='Number of channels to use in the hidden layers')
     parser.add_argument('--learning_rate', '-l', type=float, default=1e-3,
                         help='Learning Rate')
+    parser.add_argument('--lmarch', '-a', type=str, default='elmo',
+                        help='Language Model Architecture')
     parser.add_argument('--cuda', dest='cuda', action='store_true',
                         help='Use CUDA (default)')
     parser.add_argument('--no-cuda', '--cpu', dest='cuda', action='store_false',
@@ -114,6 +133,9 @@ def main():
     with open(args.dir + '/training_args.pkl', 'wb') as f:
         pickle.dump(args, f, pickle.HIGHEST_PROTOCOL)
 
+
+    lm, path = language_models[args.lmarch]
+
     #### NEEDS CHANGING WITH DATASET! ####
     train_dataset = DrugProteinDataset(args.train_dataset, prob_fake=0.5)
     valid_dataset = DrugProteinDataset(args.valid_dataset, prob_fake=0.5)
@@ -126,6 +148,8 @@ def main():
     out_channels = 1
     model = BindingModelNCE(in_channels, args.hidden_channels, out_channels)
     model = model.to(device=device)
+    model.load_language_model(lm, path)
+
     writer.add_text("Initialized Model.")
 
     if os.path.isfile(args.dir + '/model_best.pt'):

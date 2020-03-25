@@ -37,6 +37,7 @@ setup(
     url='https://github.com/ehthiede/python-binding_prediction',
     packages=find_packages('src'),
     package_dir={'': 'src'},
+    package_data={'models': ['models/lstm_lm.hdf5']}
     py_modules=[splitext(basename(path))[0] for path in glob('src/*.py')],
     include_package_data=True,
     zip_safe=False,
