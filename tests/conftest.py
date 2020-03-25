@@ -14,7 +14,7 @@ def sample_batch():
         adj_mat = (adj_mat + adj_mat.T).astype('bool').astype('float')
         adj_mat[np.arange(10), np.arange(10)] = 0.
 
-        feature_mat = np.random.randn(10, 8, 3)
+        feature_mat = np.random.randn(10, 16, 3)
         if batch > 0:
             size = np.random.randint(3, 9)
             adj_mat[size:] = 0.
