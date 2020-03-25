@@ -23,7 +23,7 @@ class TestGraphAndConv(object):
 
         feature_perm, adj_mats_perm = _permute_tensors(features, adj_mats, p_indices)
 
-        gconv = GraphAndConv(3, 4, 1, intermediate_dim = num_intermediate)
+        gconv = GraphAndConv(3, 4, 1, intermediate_channels=num_intermediate)
         output = gconv(adj_mats, features)
         permed_output = _permute_tensors(output, adj_mats, p_indices)[0]
         # print(feature_perm.shape, adj_mats_perm.shape, 'blah!')

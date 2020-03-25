@@ -173,7 +173,7 @@ class MergeSnE1(object):
         nodes_expanded = torch.stack([nodes] * N_resid, dim=1)
         embed_expanded = torch.stack([embedding] * N_nodes, dim=0)
         full_features = torch.cat((nodes_expanded, embed_expanded), dim=2)
-        
+
         sample['features'] = full_features
         return sample
 
