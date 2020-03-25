@@ -7,7 +7,6 @@ class TestDataset(unittest.TestCase):
 
     def test_load(self):
         fname = get_data_path('example.txt')
-        print(fname)
         smiles, prots = _load_datafile(fname)
         self.assertEqual(smiles[0], 'DMDVEPIJCJGHPE-UHFFFAOYSA-K')
         exp = ('MVLAWPDRYSSVQLELPEGATVAEAVATSGLALQQAPAAHAVHGLVARPEQ'

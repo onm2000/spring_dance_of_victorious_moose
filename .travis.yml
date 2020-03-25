@@ -9,31 +9,31 @@ matrix:
   include:
     - python: '3.6'
       env:
-        - TOXENV=check
+	- TOXENV=check
     - python: '3.6'
       env:
-        - TOXENV=docs
+	- TOXENV=docs
     - env:
-        - TOXENV=py27,codecov
+	- TOXENV=py27,codecov
       python: '2.7'
     - env:
-        - TOXENV=py35,codecov
+	- TOXENV=py35,codecov
       python: '3.5'
     - env:
-        - TOXENV=py36,codecov
+	- TOXENV=py36,codecov
       python: '3.6'
     - env:
-        - TOXENV=py37,codecov
+	- TOXENV=py37,codecov
       python: '3.7'
     - env:
-        - TOXENV=py38,codecov
+	- TOXENV=py38,codecov
       python: '3.8'
     - env:
-        - TOXENV=pypy,codecov
+	- TOXENV=pypy,codecov
       python: 'pypy'
     - env:
-        - TOXENV=pypy3,codecov
-        - TOXPYTHON=pypy3
+	- TOXENV=pypy3,codecov
+	- TOXPYTHON=pypy3
       python: 'pypy3'
 before_install:
   - python --version
@@ -45,8 +45,10 @@ install:
   - easy_install --version
   - pip --version
   - tox --version
+  - nose
 script:
   - tox -v
+  - nosetests
 after_failure:
   - more .tox/log/* | cat
   - more .tox/*/log/* | cat
