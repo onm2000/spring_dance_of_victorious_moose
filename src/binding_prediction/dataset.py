@@ -4,14 +4,16 @@ from rdkit import Chem
 import torch
 import numpy as np
 import scipy.sparse as sps
+import pandas as pd
 
 
 class DrugProteinDataset(Dataset):
     """
-    Datase containing drugs, protein IDs, and whether or not they bind.
+    Database containing drugs, protein IDs, and whether or not they bind.
     """
 
-    def __init__(self, datafile, protein_embedding_template, multiple_bond_types=False, precompute=True, transform=None):
+    def __init__(self, datafile, protein_embedding_template, multiple_bond_types=False,
+                 precompute=True, transform=None):
         """
         Args:
             datafile (string) : Data file that has the uniprot ids, smiles strings,
@@ -60,18 +62,18 @@ class DrugProteinDataset(Dataset):
         return sample
 
     def _load_datafile(self, datafile):
-        drugs_smiles = []
-        protein_uniprots = []
-        with open(datafile) as f:
-            f.readline()
-            while True:
-                line = f.readline()
-                if not line:
-                    break
-                split_line = line.split()
-                drugs_smiles.append(split_line[1])
-                protein_uniprots.append(split_line[4])
-        return drugs_smiles, protein_uniprots
+        """
+        Parameters
+        ----------
+        datafile : str
+           File path.  Assumes that the file is only two columns
+              1. Uniprot id
+              2. Drug SMILES string
+        """
+        df = pd.read_table('drugbank_pairs.txt', header=None)
+        protein_uniprots = np.array(df[0])
+        drug_smiles = np.array(df[1])
+        return drug_smiles, protein_uniprots
 
     def _build_interaction_matrix(self, drug_invs, prot_invs):
         M = np.max(prot_invs) + 1
@@ -146,7 +148,8 @@ class DrugProteinDataset(Dataset):
 
 
 def onehot(idx, len):
-    z = [0 for _ in range(len)]
+    idx = np.array(idx)  # make sure this is an array
+    z = np.array([0 for _ in range(len)])
     z[idx] = 1
     return z
 
