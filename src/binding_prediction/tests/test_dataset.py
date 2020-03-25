@@ -3,7 +3,7 @@ from binding_prediction.utils import get_data_path
 from binding_prediction.dataset import DrugProteinDataset, _load_datafile
 
 
-class TestDataset(unittest.TestCase):
+class TestDataUtils(unittest.TestCase):
 
     def test_load(self):
         fname = get_data_path('example.txt')
@@ -12,6 +12,10 @@ class TestDataset(unittest.TestCase):
         exp = ('MVLAWPDRYSSVQLELPEGATVAEAVATSGLALQQAPAAHAVHGLVARPEQ'
                'VLRDGDRVELLRPLLLDPKEARRRRAGPSKKAGHNS')
         self.assertEqual(prots[1], exp)
+
+class TestPosDrugProteinDataset(unittest.TestCase):
+    def test_getitem(self):
+        pass
 
 
 if __name__ == '__main__':
