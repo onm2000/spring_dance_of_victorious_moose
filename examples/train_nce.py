@@ -3,11 +3,48 @@ import argparse
 import os
 import pickle
 import datetime
+import torch.nn.functional as F
 from binding_prediction.models import GraphAndConvStack
 from binding_prediction.dataset import DrugProteinDataset
 from torch import optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+
+
+class BindingModelNCE(torch.nn.Module):
+    """
+    Model for predicting weather or not we achieve binding.
+
+    Parameters
+    ----------
+    in_channels : int
+        The size of the channel index of the input tensor
+    hidden_channel_list : iterable of ints
+        Number of channels in every hidden layer of the encoder
+        Length corresponds to the number of hidden layers.
+    out_channels : int
+        number of output channels.
+    conv_kernel_sizes : iterable of ints, optional
+        Number of channels in every hidden layer of the encoder
+        Length corresponds to the number of layers.
+        If not provided, defaults to 1 for every layer
+    """
+
+    def __init__(self, in_channels, hidden_channel_list, out_channels,
+                 conv_kernel_sizes=None, nonlinearity=None):
+        super(BindingModelNCE, self).__init__()
+        self.gcs_stack = GraphAndConvStack(in_channels, hidden_channel_list,
+                                           out_channels, conv_kernel_sizes,
+                                           nonlinearity)
+        total_number_inputs = sum(hidden_channel_list) + out_channels
+        self.final_mix = torch.nn.Linear(total_number_inputs, 1, bias=False)
+
+    def forward(self, adj, x):
+        x_all = self.gcs_stack(adj, x)
+        x_all = torch.cat(x_all, dim=-1)
+        x_out = self.final_mix(x_all)
+        x_out = torch.sum(torch.sum(x_out, dim=2), dim=1)
+        return x_out
 
 
 def _parse_args():
@@ -37,9 +74,9 @@ def _parse_args():
 
 
 def calculate_loss(output, batch):
-    #### NEEDS CHANGING WITH DATASET / TASK ! ####
-    return -1
-    ##############################################
+    targets = batch['is_true']
+    bce_loss = F.binary_cross_entropy_with_logits(output, targets)
+    return bce_loss
 
 
 def run_model_on_batch(model, batch):
@@ -78,8 +115,8 @@ def main():
         pickle.dump(args, f, pickle.HIGHEST_PROTOCOL)
 
     #### NEEDS CHANGING WITH DATASET! ####
-    train_dataset = DrugProteinDataset(args.train_dataset)
-    valid_dataset = DrugProteinDataset(args.valid_dataset)
+    train_dataset = DrugProteinDataset(args.train_dataset, prob_fake=0.5)
+    valid_dataset = DrugProteinDataset(args.valid_dataset, prob_fake=0.5)
     ######################################
 
     train_dataloader = DataLoader(train_dataset, args.batch_size, shuffle=True)
@@ -87,7 +124,7 @@ def main():
 
     in_channels = train_dataset[0].shape[-1]
     out_channels = 1
-    model = GraphAndConvStack(in_channels, args.hidden_channels, out_channels)
+    model = BindingModelNCE(in_channels, args.hidden_channels, out_channels)
     model = model.to(device=device)
     writer.add_text("Initialized Model.")
 
