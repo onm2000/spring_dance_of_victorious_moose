@@ -44,7 +44,6 @@ def _pack_for_convolution(x):
     return x
 
 
-
 def get_data_path(fn, subfolder='data'):
     """Return path to filename ``fn`` in the data folder.
 

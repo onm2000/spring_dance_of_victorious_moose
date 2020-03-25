@@ -16,9 +16,11 @@ def _load_datafile(datafile):
           1. Drug INCHI string
           2. Protein sequence
     """
-    df = pd.read_table(datafile, header=None)
-    drug_inchi = np.array(df[0]) # first column is inchi key
-    protein_seqs = np.array(df[1]) # second column is sequence
+    df = pd.read_table(datafile, header=None, delim_whitespace=True)
+    drug_inchi = np.array(df[0])  # first column is inchi key
+    print(drug_inchi)
+    print(df)
+    protein_seqs = np.array(df[1])  # second column is sequence
     return drug_inchi, protein_seqs
 
 
@@ -27,7 +29,7 @@ class DrugProteinDataset(Dataset):
     Database containing drugs, protein IDs, and whether or not they bind.
     """
 
-    def __init__(self, datafile, protein_embedding_template, multiple_bond_types=False,
+    def __init__(self, datafile, multiple_bond_types=False,
                  precompute=True, transform=None, prob_fake=0.0, fake_dist=None):
         """
         Args:
@@ -37,7 +39,6 @@ class DrugProteinDataset(Dataset):
         """
         super(DrugProteinDataset, self).__init__()
         self.all_drugs, self.all_prots = _load_datafile(datafile)
-        self.protein_embedding_template = protein_embedding_template
         self.unique_prots, prot_invs = np.unique(self.all_prots, return_inverse=True)
         self.unique_drugs, drug_invs = np.unique(self.all_drugs, return_inverse=True)
         self.multiple_bond_types = multiple_bond_types
@@ -67,6 +68,8 @@ class DrugProteinDataset(Dataset):
         if self.precompute:
             nodes, edges = self.drug_graphs[smiles]
         else:
+            print(smiles)
+            output = self._build_drug_graph(smiles)
             nodes, edges, __ = self._build_drug_graph(smiles)
         adj = self._graph_to_adj_mat(edges)
         if not self.multiple_bond_types:
@@ -83,7 +86,7 @@ class DrugProteinDataset(Dataset):
         smiles = self.all_drugs[drug_idx]
         prot = self.all_prots[prot_idx]
 
-        nodes, adj_mat = _preprocess_molecule(smiles)
+        nodes, adj_mat = self._preprocess_molecule(smiles)
 
         sample = {'node_features': nodes, 'adj_mat': adj_mat,
                   'protein': prot, 'is_true': int(is_true)}
@@ -109,9 +112,9 @@ class DrugProteinDataset(Dataset):
         """
         Builds a molecular graph form a smiles string.  Taken from [FIND SOURCE!]
         """
-        mol = Chem.inchi.MolFromInchi(smiles)
+        mol = Chem.MolFromSmiles(smiles)
         if mol is None:
-            return [], []
+            raise ValueError('Molecule construction failed on Inchi %s' % smiles)
         # Kekulize it
         if self.need_kekulize(mol):
             rdmolops.Kekulize(mol)
@@ -136,7 +139,7 @@ class DrugProteinDataset(Dataset):
         return nodes, edges, mol
 
     def _build_dataset_info(self):
-        self.dataset_info = {'atom_types': ["H", "C", "N", "O", "F", "S"]
+        self.dataset_info = {'atom_types': ["H", "C", "N", "O", "F", "S", "P", "Cl"]
                              }
 
         self.bond_dict = {'SINGLE': 0, 'DOUBLE': 1, 'TRIPLE': 2, "AROMATIC": 3}
@@ -224,7 +227,7 @@ class MergeSnE1(object):
         super(MergeSnE1, self).__init__()
 
     def __call__(self, sample):
-        embedding = sample['prot_embedding']
+        embedding = sample['protein']
         nodes = sample['node_features']
         N_resid = embedding.shape[0]
         N_nodes = nodes.shape[0]
