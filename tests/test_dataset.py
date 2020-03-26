@@ -64,7 +64,7 @@ class TestPosDrugProteinDataset(object):
                    'ARYPAMQGPRHDDICYATQNRQDAVRDLARQCDLVLVVGSPNSSNS'
                    'NRLSELARRDGVESYLIDNASEIDPAWIVGKQHIGLTAGASAPQVL'
                    'VDGVLERLRELGAAGVSELEGEPESMVFALPKELRLRLVS')
-        self.assertEqual(res['protein'], exp_seq)
+        assert(res['protein'] == exp_seq)
 
 
 class TestTransform(object):
