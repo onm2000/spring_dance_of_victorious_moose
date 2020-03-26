@@ -5,14 +5,11 @@ import pickle
 import datetime
 import torch.nn.functional as F
 from binding_prediction.models import BindingModel
-from binding_prediction.dataset import DrugProteinDataset
-from binding_prediction.protein import ProteinSequence
-from binding_prediction import language_models
+from binding_prediction.dataset import DrugProteinDataset, collate_fn
+from binding_prediction import pretrained_language_models
 from torch import optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-
-
 
 
 def _parse_args():
@@ -84,16 +81,17 @@ def main():
     with open(args.dir + '/training_args.pkl', 'wb') as f:
         pickle.dump(args, f, pickle.HIGHEST_PROTOCOL)
 
+    lm, path = pretrained_language_models[args.lmarch]
 
-    lm, path = language_models[args.lmarch]
-
-    #### NEEDS CHANGING WITH DATASET! ####
+    #### NEEDS CHANGING WITH DATASET? ####
     train_dataset = DrugProteinDataset(args.train_dataset, prob_fake=0.5)
     valid_dataset = DrugProteinDataset(args.valid_dataset, prob_fake=0.5)
     ######################################
 
-    train_dataloader = DataLoader(train_dataset, args.batch_size, shuffle=True)
-    valid_dataloader = DataLoader(valid_dataset, args.batch_size, shuffle=True)
+    cfxn = lambda x : collate_fn(x, prots_are_sequences=True)
+
+    train_dataloader = DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=cfxn)
+    valid_dataloader = DataLoader(valid_dataset, args.batch_size, shuffle=True, collate_fn=cfxn)
 
     in_channels = train_dataset[0].shape[-1]
     out_channels = 1
