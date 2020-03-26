@@ -167,11 +167,8 @@ class PosDrugProteinDataset(DrugProteinDataset):
     Bayesian Personalized Ranking:
        https://arxiv.org/pdf/1205.2618.pdf
     """
-    def __init__(self, datafile, protein_embedding_template, multiple_bond_types=False,
-                 precompute=True, transform=None, prob_fake=0.0, fake_dist=None, num_neg=10):
-        super(DrugProteinDataset, self).__init__(
-            datafile, protein_embedding_template, multiple_bond_types=False,
-            precompute=True, transform=None, prob_fake=0.0, fake_dist=None)
+    def __init__(self, num_neg=1, **kwargs):
+        super(PosDrugProteinDataset, self).__init__(**kwargs)
         self.num_neg = num_neg
 
     def __getitem__(self, idx):
@@ -183,8 +180,8 @@ class PosDrugProteinDataset(DrugProteinDataset):
         smiles_neg = self.all_drugs[drug_neg]
         prot = self.all_prots[prot_idx]
 
-        pos_nodes, pos_adj = _preprocess_molecule(smiles)
-        neg_nodes, neg_adj = _preprocess_molecule(smiles)
+        pos_nodes, pos_adj = self._preprocess_molecule(smiles_pos)
+        neg_nodes, neg_adj = self._preprocess_molecule(smiles_neg)
 
         sample = {'pos_node_features': pos_nodes, 'pos_adj_mat': pos_adj_mat,
                   'neg_node_features': neg_nodes, 'neg_adj_mat': neg_adj_mat,
