@@ -4,6 +4,7 @@ from rdkit import Chem
 import torch
 import numpy as np
 import scipy.sparse as sps
+import dgl
 
 
 class DrugProteinDataset(Dataset):
@@ -177,6 +178,20 @@ class MergeSnE1(object):
         sample['features'] = full_features
         return sample
 
+class DGLGraphBuilder(MergeSnE1):
+    def __init__(self):
+        super().__init__()
+
+    def __call__(self, sample):
+        full_features = super().__call__(sample)['features']
+        adj_mat = sample['adj_mat']
+        g = dgl.DGLGraph()
+        N_nodes = full_features.shape[0]
+        g.add_nodes(N_nodes, {'features': full_features})
+        nonzero_coords = torch.nonzero(adj_mat)
+        u, v = nonzero_coords[:, 1], nonzero_coords[:, 0]
+        g.add_edges(u, v)
+        return g
 
 def onehot(idx, len):
     z = [0 for _ in range(len)]

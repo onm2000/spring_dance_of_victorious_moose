@@ -1,6 +1,6 @@
 import torch
 import pytest
-from binding_prediction.dataset import DrugProteinDataset, MergeSnE1, collate_fn
+from binding_prediction.dataset import DrugProteinDataset, MergeSnE1, DGLGraphBuilder, collate_fn
 
 
 class TestDrugProteinDataset(object):
@@ -57,6 +57,22 @@ class TestTransform(object):
         assert(torch.norm(output_sample['features'][:, 2, :4] - node_features) < 1.e-6)
         assert(torch.norm(output_sample['features'][3, :, 4:] - prot_embedding) < 1.e-6)
 
+    def test_dgl(self):
+        node_features = torch.randn(13, 4)
+        prot_embedding = torch.randn(40, 2)
+        adj_mat = torch.randint(2, (13, 13)).float()
+        input_sample = {'node_features': node_features,
+                        'prot_embedding': prot_embedding,
+                        'adj_mat': adj_mat}
+
+        tf = DGLGraphBuilder()
+        output_graph = tf(input_sample)
+        assert(torch.norm(output_graph.adjacency_matrix().to_dense() - adj_mat) < 1E-6)
+
+        expected_shape = (13, 40, 6)
+        assert(output_graph.ndata['features'].shape == expected_shape)
+        assert(torch.norm(output_graph.ndata['features'][:, 2, :4] - node_features) < 1.e-6)
+        assert(torch.norm(output_graph.ndata['features'][3, :, 4:] - prot_embedding) < 1.e-6)
 
 def test_collate_fxn():
     node_features = [torch.randn(13, 4), torch.randn(8, 4), torch.randn(15, 4)]
@@ -72,7 +88,7 @@ def test_collate_fxn():
     assert(collated_batch['node_features'].shape == (3, 15, 4))
     assert(collated_batch['prot_embedding'].shape == (3, 40, 2))
     assert(torch.norm(collated_batch['is_true'] - torch.tensor([1., 1., 0.])) < 1e-6)
-    
+
     for i, (n_i, p_i, a_i) in enumerate(zip(node_features, prot_embedding, adj_mat)):
         drug_size, drug_channels = n_i.shape
         prot_size, prot_channels = p_i.shape
