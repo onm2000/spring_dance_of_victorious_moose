@@ -1,6 +1,6 @@
 import torch
 import pytest
-from binding_prediction.layers import GraphAndConv
+from binding_prediction.layers import GraphAndConv, GraphAndConvDGL
 
 
 def _permute_tensors(features, adj_mats, p_indices):
@@ -16,14 +16,15 @@ def _permute_tensors(features, adj_mats, p_indices):
 
 class TestGraphAndConv(object):
     @pytest.mark.parametrize('num_intermediate', [None, 4])
-    def test_permutation_equivariance(self, sample_batch, num_intermediate):
+    @pytest.mark.parametrize('layer_cls', [GraphAndConv, GraphAndConvDGL])
+    def test_permutation_equivariance(self, sample_batch, num_intermediate, layer_cls):
         features, adj_mats = sample_batch
         B, N, __ = adj_mats.shape
         p_indices = [torch.randperm(N) for i in range(B)]
 
         feature_perm, adj_mats_perm = _permute_tensors(features, adj_mats, p_indices)
 
-        gconv = GraphAndConv(3, 4, 1, intermediate_channels=num_intermediate)
+        gconv = layer_cls(3, 4, 1, intermediate_channels=num_intermediate)
         output = gconv(adj_mats, features)
         permed_output = _permute_tensors(output, adj_mats, p_indices)[0]
         # print(feature_perm.shape, adj_mats_perm.shape, 'blah!')
@@ -31,7 +32,8 @@ class TestGraphAndConv(object):
         # print(output_from_perm.shape, permed_output.shape, 'perm')
         assert(torch.norm(permed_output - output_from_perm) < 1e-4)
 
-    def test_translational_equivariance(self, sample_batch):
+    @pytest.mark.parametrize('layer_cls', [GraphAndConv, GraphAndConvDGL])
+    def test_translational_equivariance(self, sample_batch, layer_cls):
         features, adj_mats = sample_batch
         features[:, :, -1] = 0.
         trans_features = torch.zeros(features.shape)

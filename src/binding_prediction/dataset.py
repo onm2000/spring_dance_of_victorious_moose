@@ -1,3 +1,4 @@
+import dgl
 from torch.utils.data import Dataset
 from rdkit.Chem import rdmolops
 from rdkit import Chem
@@ -5,7 +6,6 @@ import math
 import torch
 import numpy as np
 import scipy.sparse as sps
-import dgl
 import pandas as pd
 
 
@@ -62,7 +62,7 @@ class DrugProteinDataset(Dataset):
         self.transform = transform
 
     def __len__(self):
-        return len(self.data)
+        return len(self.all_drugs)
 
     def _preprocess_molecule(self, smiles):
         if self.precompute:
@@ -239,12 +239,7 @@ class DGLGraphBuilder(MergeSnE1):
     def __call__(self, sample):
         full_features = super().__call__(sample)['features']
         adj_mat = sample['adj_mat']
-        g = dgl.DGLGraph()
-        N_nodes = full_features.shape[0]
-        g.add_nodes(N_nodes, {'features': full_features})
-        nonzero_coords = torch.nonzero(adj_mat)
-        u, v = nonzero_coords[:, 1], nonzero_coords[:, 0]
-        g.add_edges(u, v)
+        g = build_dgl_graph(full_features, adj_mat)
         return g
 
 def onehot(idx, len):
@@ -304,3 +299,21 @@ def _batch_stack(props, edge_mat=False):
             padded_tensor[idx, :this_atoms, :this_atoms] = prop
 
         return padded_tensor
+
+
+def build_dgl_graph(features, adj_mat):
+    g = dgl.DGLGraph()
+    N_nodes = features.shape[0]
+    g.add_nodes(N_nodes, {'features': features})
+    nonzero_coords = torch.nonzero(adj_mat)
+    u, v = nonzero_coords[:, 1], nonzero_coords[:, 0]
+    g.add_edges(u, v)
+    return g
+
+
+def build_dgl_graph_batch(batch_features, batch_adj_mat):
+    graphs = []
+    for i in range(len(batch_adj_mat)):
+        graphs.append(build_dgl_graph(batch_features[i], batch_adj_mat[i]))
+    graphs_batch = dgl.batch(graphs)
+    return graphs_batch
