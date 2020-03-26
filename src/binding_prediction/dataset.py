@@ -2,6 +2,7 @@ import dgl
 from torch.utils.data import Dataset
 from rdkit.Chem import rdmolops
 from rdkit import Chem
+from .utils import onehot
 import math
 import torch
 import numpy as np
@@ -128,6 +129,7 @@ class DrugProteinDataset(Dataset):
                           bond.GetEndAtomIdx()))
             assert self.bond_dict[str(bond.GetBondType())] != 3
         for atom in mol.GetAtoms():
+            # This could probably be spead up....
             nodes.append(onehot(self.dataset_info['atom_types'].index(atom.GetSymbol()),
                                 len(self.dataset_info['atom_types'])))
 
@@ -241,13 +243,6 @@ class DGLGraphBuilder(MergeSnE1):
         adj_mat = sample['adj_mat']
         g = build_dgl_graph(full_features, adj_mat)
         return g
-
-def onehot(idx, len):
-    idx = np.array(idx)  # make sure this is an array
-    z = np.array([0 for _ in range(len)])
-    z[idx] = 1
-    return z
-
 
 def collate_fn(batch):
     collated_batch = {}
