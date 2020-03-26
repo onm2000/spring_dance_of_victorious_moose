@@ -1,6 +1,8 @@
 import torch
 import pytest
-from binding_prediction.dataset import DrugProteinDataset, MergeSnE1, DGLGraphBuilder, collate_fn, _load_datafile
+from binding_prediction.dataset import (
+    DrugProteinDataset, PosDrugProteinDataset,
+    MergeSnE1, DGLGraphBuilder, collate_fn, _load_datafile)
 from binding_prediction.utils import get_data_path
 
 def get_input_sample():
@@ -57,6 +59,22 @@ class TestDrugProteinDataset(object):
         assert(fake_element['is_true'] == 0)
 
 
+class TestPosDrugProteinDataset(object):
+
+    def test_getitem(self):
+        datafile = get_data_path('sample_dataset2.txt')
+        db = PosDrugProteinDataset(datafile=datafile, num_neg=2)
+        res = db[0]
+        exp_seq = ('MDVLLANPRGFCAGVDRAIEIVKRAIETLGAPIYVRHEVVHNRFVV'
+                   'DDLKQRGAIFVEELDEVPDDATVIFSAHGVSQAVRQEAERRGLKVF'
+                   'DATCPLVTKVHFEVARHCRAGRDVVLIGHAGHPEVEGTMGQWSRER'
+                   'GAGTIYLVEDIEQVATLDVRQPDNLAYTTQTTLSVDDTMGIIEALR'
+                   'ARYPAMQGPRHDDICYATQNRQDAVRDLARQCDLVLVVGSPNSSNS'
+                   'NRLSELARRDGVESYLIDNASEIDPAWIVGKQHIGLTAGASAPQVL'
+                   'VDGVLERLRELGAAGVSELEGEPESMVFALPKELRLRLVS')
+        assert(res['protein'] == exp_seq)
+
+
 class TestTransform(object):
     def test_merge(self):
         input_sample = get_input_sample()
@@ -89,7 +107,8 @@ class TestTransform(object):
 def test_collate_fxn():
     node_features = [torch.randn(13, 4), torch.randn(8, 4), torch.randn(15, 4)]
     protein = [torch.randn(40, 2), torch.randn(15, 2), torch.randn(30, 2)]
-    adj_mat = [torch.randint(2, (13, 13)).float(), torch.randint(2, (8, 8)).float(), torch.randint(2, (15, 15)).float()]
+    adj_mat = [torch.randint(2, (13, 13)).float(), torch.randint(2, (8, 8)).float(),
+               torch.randint(2, (15, 15)).float()]
     is_true = [1, 1, 0]
     input_batches = []
     for n_i, p_i, a_i, t_i in zip(node_features, protein, adj_mat, is_true):
@@ -110,8 +129,3 @@ def test_collate_fxn():
         assert(torch.norm(batched_p_i - p_i) < 1e-4)
         batched_a_i = collated_batch['adj_mat'][i][:drug_size, :drug_size]
         assert(torch.norm(batched_a_i - a_i) < 1e-4)
-
-
-
-
-

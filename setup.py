@@ -37,6 +37,7 @@ setup(
     url='https://github.com/ehthiede/python-binding_prediction',
     packages=find_packages('src'),
     package_dir={'': 'src'},
+    package_data={'models': ['models/lstm_lm.hdf5']},
     py_modules=[splitext(basename(path))[0] for path in glob('src/*.py')],
     include_package_data=True,
     zip_safe=False,
@@ -73,7 +74,7 @@ setup(
     ],
     python_requires='>=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*',
     install_requires=[
-        'pytorch', 'numpy', 'scipy', 'rdkit'
+        'torch', 'numpy', 'scipy'
     ],
     extras_require={
         # eg:
