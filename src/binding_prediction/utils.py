@@ -1,6 +1,14 @@
 import torch
 import inspect
 import os
+import numpy as np
+
+
+def onehot(idx, len):
+    idx = np.array(idx)  # make sure this is an array
+    z = np.array([0 for _ in range(len)])
+    z[idx] = 1
+    return z
 
 
 def _calc_padding(dilation, kernel_size):

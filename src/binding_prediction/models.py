@@ -1,5 +1,57 @@
+import torch
 import torch.nn as nn
 from .layers import GraphAndConv
+
+
+class BindingModel(torch.nn.Module):
+    """
+    Model for predicting weather or not we achieve binding.
+
+    Parameters
+    ----------
+    in_channels : int
+        The size of the channel index of the input tensor
+    hidden_channel_list : iterable of ints
+        Number of channels in every hidden layer of the encoder
+        Length corresponds to the number of hidden layers.
+    out_channels : int
+        number of output channels.
+    conv_kernel_sizes : iterable of ints, optional
+        Number of channels in every hidden layer of the encoder
+        Length corresponds to the number of layers.
+        If not provided, defaults to 1 for every layer
+    """
+    def __init__(self, in_channels, hidden_channel_list, out_channels,
+                 conv_kernel_sizes=None, nonlinearity=None):
+        super(BindingModel, self).__init__()
+        self.gcs_stack = GraphAndConvStack(in_channels, hidden_channel_list,
+                                           out_channels, conv_kernel_sizes,
+                                           nonlinearity)
+        total_number_inputs = sum(hidden_channel_list) + out_channels
+        self.final_mix = nn.Linear(total_number_inputs, 1, bias=False)
+        self.lm = None
+
+    def forward(self, adj, x):
+        if self.lm is None:
+            raise ValueError('Language model is not initialized!')
+        y = self.lm.extract(x)
+        x_all = self.gcs_stack(adj, y)
+        x_all = torch.cat(x_all, dim=-1)
+        x_out = self.final_mix(x_all)
+        x_out = torch.sum(torch.sum(x_out, dim=2), dim=1)
+        return x_out
+
+    def load_language_model(self, cls, path):
+        """
+        Parameters
+        ----------
+        cls : Module name
+            Name of the Language model.
+            (i.e. binding_prediction.language_model.Elmo)
+        path : filepath
+            Filepath of the pretrained model.
+        """
+        self.lm = cls(path)
 
 
 class GraphAndConvStack(nn.Module):
