@@ -22,11 +22,11 @@ class BindingModel(torch.nn.Module):
         If not provided, defaults to 1 for every layer
     """
     def __init__(self, in_channels, hidden_channel_list, out_channels,
-                 conv_kernel_sizes=None, nonlinearity=None):
+                 conv_kernel_sizes=None, nonlinearity=None, layer_cls=GraphAndConv):
         super(BindingModel, self).__init__()
         self.gcs_stack = GraphAndConvStack(in_channels, hidden_channel_list,
                                            out_channels, conv_kernel_sizes,
-                                           nonlinearity)
+                                           nonlinearity, layer_cls)
         total_number_inputs = sum(hidden_channel_list) + out_channels
         self.final_mix = nn.Linear(total_number_inputs, 1, bias=False)
         self.lm = None
