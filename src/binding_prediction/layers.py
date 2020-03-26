@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.functional as F
+from dgl.nn.pytorch.conv import GraphConv
 import math
 from .utils import _calc_padding, _unpack_from_convolution, _pack_for_convolution
 
@@ -30,6 +31,34 @@ class GraphAndConv(nn.Module):
         x[~mask] = 0.
         return x
 
+class GraphAndConvDGL(nn.Module):
+    def __init__(self, in_channels, out_channels, conv_kernel_size=1, intermediate_channels=None):
+        super(GraphAndConv, self).__init__()
+        if intermediate_channels is None:
+            intermediate_channels = out_channels
+        self.gnn = GraphConv(in_channels, in_channels)
+        self.lin = nn.Linear(2*in_channels, intermediate_channels)
+        padding = _calc_padding(1, conv_kernel_size)
+        self.conv = nn.Conv1d(intermediate_channels, out_channels, conv_kernel_size, padding=padding)
+
+        self.in_channels = in_channels
+        self.intermediate_channels = intermediate_channels
+        self.out_channels = out_channels
+
+    def forward(self, g):
+        inputs = g.ndata['features']
+        batch_size = inputs.shape[0]
+        adj = g.adjacency_matrix().to_dense()
+        mask = adj.sum(dim=2).bool()
+
+        x = self.gnn(g, inputs)
+        x = torch.cat((x, inputs), dim=-1)
+        x = self.lin(x)
+        x = _pack_for_convolution(x)
+        x = self.conv(x)
+        x = _unpack_from_convolution(x, batch_size)
+        x[~mask] = 0.
+        return x
 
 class RankingLayer(nn.Module):
     def __init__(self, input_size, emb_dim):

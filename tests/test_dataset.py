@@ -3,6 +3,14 @@ import pytest
 from binding_prediction.dataset import DrugProteinDataset, MergeSnE1, DGLGraphBuilder, collate_fn, _load_datafile
 from binding_prediction.utils import get_data_path
 
+def get_input_sample():
+    node_features = torch.randn(13, 4)
+    protein = torch.randn(40, 2)
+    adj_mat = torch.randint(2, (13, 13)).float()
+    input_sample = {'node_features': node_features,
+                    'protein': protein,
+                    'adj_mat': adj_mat}
+    return input_sample
 
 class TestDataUtils(object):
     def test_load(self):
@@ -51,12 +59,9 @@ class TestDrugProteinDataset(object):
 
 class TestTransform(object):
     def test_merge(self):
-        node_features = torch.randn(13, 4)
-        protein = torch.randn(40, 2)
-        adj_mat = torch.randint(2, (13, 13)).float()
-        input_sample = {'node_features': node_features,
-                        'protein': protein,
-                        'adj_mat': adj_mat}
+        input_sample = get_input_sample()
+        node_features, adj_mat, protein = input_sample['node_features'], input_sample['adj_mat'],\
+                                          input_sample['protein']
 
         tf = MergeSnE1()
         output_sample = tf(input_sample)
@@ -68,12 +73,9 @@ class TestTransform(object):
         assert(torch.norm(output_sample['features'][3, :, 4:] - protein) < 1.e-6)
 
     def test_dgl(self):
-        node_features = torch.randn(13, 4)
-        prot_embedding = torch.randn(40, 2)
-        adj_mat = torch.randint(2, (13, 13)).float()
-        input_sample = {'node_features': node_features,
-                        'prot_embedding': prot_embedding,
-                        'adj_mat': adj_mat}
+        input_sample = get_input_sample()
+        node_features, adj_mat, protein = input_sample['node_features'], input_sample['adj_mat'],\
+                                          input_sample['protein']
 
         tf = DGLGraphBuilder()
         output_graph = tf(input_sample)
@@ -82,7 +84,7 @@ class TestTransform(object):
         expected_shape = (13, 40, 6)
         assert(output_graph.ndata['features'].shape == expected_shape)
         assert(torch.norm(output_graph.ndata['features'][:, 2, :4] - node_features) < 1.e-6)
-        assert(torch.norm(output_graph.ndata['features'][3, :, 4:] - prot_embedding) < 1.e-6)
+        assert(torch.norm(output_graph.ndata['features'][3, :, 4:] - protein) < 1.e-6)
 
 def test_collate_fxn():
     node_features = [torch.randn(13, 4), torch.randn(8, 4), torch.randn(15, 4)]
