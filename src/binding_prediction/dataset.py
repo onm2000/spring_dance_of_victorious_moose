@@ -217,31 +217,21 @@ class PosDrugProteinDataset(DrugProteinDataset):
                     yield self.__getitem__(i)
 
 
-class MergeSnE1(object):
-    def __init__(self):
-        super(MergeSnE1, self).__init__()
-
-    def __call__(self, sample):
-        embedding = sample['protein']
-        nodes = sample['node_features']
-        N_resid = embedding.shape[0]
-        N_nodes = nodes.shape[0]
-        nodes_expanded = torch.stack([nodes] * N_resid, dim=1)
-        embed_expanded = torch.stack([embedding] * N_nodes, dim=0)
-        full_features = torch.cat((nodes_expanded, embed_expanded), dim=2)
-
-        sample['features'] = full_features
-        return sample
-
-
-def collate_fn(batch):
+def collate_fn(batch, prots_are_sequences=False):
     collated_batch = {}
     for prop in batch[0].keys():
         if prop == 'adj_mat':
             edge_mat = True
+        elif prop == 'protein':
+            if prots_are_sequences:
+                sequence_list = [mol[prop] for mol in batch]
+                collated_batch[prop] = sequence_list
+            else:
+                collated_batch[prop] = _batch_stack([mol[prop] for mol in batch], edge_mat=edge_mat)
         else:
             edge_mat = False
         collated_batch[prop] = _batch_stack([mol[prop] for mol in batch], edge_mat=edge_mat)
+
     return collated_batch
 
 

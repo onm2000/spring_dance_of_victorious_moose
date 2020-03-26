@@ -1,7 +1,11 @@
 import torch
-import tensorflow as tf
+import warnings
 from binding_prediction.protein import ProteinSequence
 from binding_prediction.utils import onehot
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", category=FutureWarning)
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    import tensorflow as tf
 
 
 class LanguageModel(object):
@@ -24,7 +28,7 @@ class Elmo(LanguageModel):
                                            outputs=[m.get_layer(layer).output],
                                            trainable=trainable)
 
-    def extract(self, x):
+    def __call__(self, x):
         prot = ProteinSequence(x)
         embed = self.model.predict(prot.onehot).squeeze()
         return torch.Tensor(embed)
@@ -38,7 +42,7 @@ class OneHot(LanguageModel):
                           "Y", "V"]
         self.num_words = len(self.tla_codes)
 
-    def extract(self, x):
+    def __call__(self, x):
         embedding = []
         for x_i in x:
             emb_i = [onehot(self.tla_codes.index(w_i), self.num_words) for w_i in x]
