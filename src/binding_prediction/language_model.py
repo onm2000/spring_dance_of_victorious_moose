@@ -25,4 +25,5 @@ class Elmo(LanguageModel):
 
     def extract(self, x):
         prot = ProteinSequence(x)
-        return self.model.predict(prot.onehot).squeeze()
+        embed = self.model.predict(prot.onehot).squeeze()
+        return torch.Tensor(embed)
