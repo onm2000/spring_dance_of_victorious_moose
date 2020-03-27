@@ -44,15 +44,15 @@ class TestGraphAndConv(object):
 class TestMergeSnE1(object):
     def test_merge(self):
         node_features = torch.randn(3, 13, 4)
-        protein_sequences = [torch.randn(40, 2), torch.randn(20, 2), torch.randn(32, 2)]
-
+        protein_sequences = torch.randn(3, 40, 2)
         tf = MergeSnE1()
         output_sample = tf(node_features, protein_sequences)
 
         expected_shape = (3, 13, 40, 6)
         assert(output_sample.shape == expected_shape)
         assert(torch.norm(output_sample[:, :, 2, :4] - node_features) < 1.e-6)
-        for i in range(3):
-            len_i = len(protein_sequences[i])
-            assert(torch.norm(output_sample[i, 3, :len_i, 4:] - protein_sequences[i]) < 1.e-6)
-            assert(torch.norm(output_sample[i, 3, len_i:, 4:]) < 1e-6)
+        assert(torch.norm(output_sample[:, 3, :, 4:] - protein_sequences) < 1.e-6)
+        # for i in range(3):
+        #     len_i = len(protein_sequences[i])
+        #     assert(torch.norm(output_sample[i, 3, :len_i, 4:] - protein_sequences[i]) < 1.e-6)
+        #     assert(torch.norm(output_sample[i, 3, len_i:, 4:]) < 1e-6)
