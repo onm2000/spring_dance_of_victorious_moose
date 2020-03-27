@@ -2,7 +2,7 @@ import torch
 import pytest
 from binding_prediction.dataset import (
     DrugProteinDataset, PosDrugProteinDataset,
-    MergeSnE1, DGLGraphBuilder, collate_fn, _load_datafile)
+    collate_fn, _load_datafile)
 from binding_prediction.utils import get_data_path
 
 def get_input_sample():
@@ -29,7 +29,7 @@ class TestDrugProteinDataset(object):
     @pytest.mark.parametrize('multiple_bond_types', [True, False])
     def test_output_shapes(self, precompute, multiple_bond_types):
         dset = DrugProteinDataset("data/example.txt", precompute=precompute,
-                multiple_bond_types=multiple_bond_types)
+                                  multiple_bond_types=multiple_bond_types)
         first_element = dset[0]
         assert(first_element['node_features'].shape[0] == 14)
         assert(first_element['adj_mat'].shape[0] == 14)
@@ -60,7 +60,6 @@ class TestDrugProteinDataset(object):
 
 
 class TestPosDrugProteinDataset(object):
-
     def test_getitem(self):
         datafile = get_data_path('sample_dataset2.txt')
         db = PosDrugProteinDataset(datafile=datafile, num_neg=2)
@@ -74,35 +73,6 @@ class TestPosDrugProteinDataset(object):
                    'VDGVLERLRELGAAGVSELEGEPESMVFALPKELRLRLVS')
         assert(res['protein'] == exp_seq)
 
-
-class TestTransform(object):
-    def test_merge(self):
-        input_sample = get_input_sample()
-        node_features, adj_mat, protein = input_sample['node_features'], input_sample['adj_mat'],\
-                                          input_sample['protein']
-
-        tf = MergeSnE1()
-        output_sample = tf(input_sample)
-        assert(torch.norm(output_sample['adj_mat'] - adj_mat) < 1E-6)
-
-        expected_shape = (13, 40, 6)
-        assert(output_sample['features'].shape == expected_shape)
-        assert(torch.norm(output_sample['features'][:, 2, :4] - node_features) < 1.e-6)
-        assert(torch.norm(output_sample['features'][3, :, 4:] - protein) < 1.e-6)
-
-    def test_dgl(self):
-        input_sample = get_input_sample()
-        node_features, adj_mat, protein = input_sample['node_features'], input_sample['adj_mat'],\
-                                          input_sample['protein']
-
-        tf = DGLGraphBuilder()
-        output_graph = tf(input_sample)
-        assert(torch.norm(output_graph.adjacency_matrix().to_dense() - adj_mat) < 1E-6)
-
-        expected_shape = (13, 40, 6)
-        assert(output_graph.ndata['features'].shape == expected_shape)
-        assert(torch.norm(output_graph.ndata['features'][:, 2, :4] - node_features) < 1.e-6)
-        assert(torch.norm(output_graph.ndata['features'][3, :, 4:] - protein) < 1.e-6)
 
 def test_collate_fxn():
     node_features = [torch.randn(13, 4), torch.randn(8, 4), torch.randn(15, 4)]

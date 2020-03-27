@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from .layers import GraphAndConv
+from .layers import GraphAndConv, MergeSnE1
 
 
 class BindingModel(torch.nn.Module):
@@ -27,14 +27,16 @@ class BindingModel(torch.nn.Module):
         self.gcs_stack = GraphAndConvStack(in_channels, hidden_channel_list,
                                            out_channels, conv_kernel_sizes,
                                            nonlinearity, layer_cls)
+        self.merge_graph_w_sequences = MergeSnE1()
         total_number_inputs = sum(hidden_channel_list) + out_channels
         self.final_mix = nn.Linear(total_number_inputs, 1, bias=False)
         self.lm = None
 
-    def forward(self, adj, x):
+    def forward(self, adj, x, prot_sequences):
         if self.lm is None:
             raise ValueError('Language model is not initialized!')
-        y = self.lm.extract(x)
+        prot_embeddings = [self.lm(p_i) for p_i in prot_sequences]
+        y = self.merge_graph_w_sequences(x, prot_embeddings)
         x_all = self.gcs_stack(adj, y)
         x_all = torch.cat(x_all, dim=-1)
         x_out = self.final_mix(x_all)
