@@ -1,6 +1,8 @@
 from torch.utils.data import Dataset
 from rdkit.Chem import rdmolops
 from rdkit import Chem
+from .utils import onehot
+import math
 import torch
 import numpy as np
 import scipy.sparse as sps
@@ -66,7 +68,6 @@ class DrugProteinDataset(Dataset):
         if self.precompute:
             nodes, edges = self.drug_graphs[smiles]
         else:
-            output = self._build_drug_graph(smiles)
             nodes, edges, __ = self._build_drug_graph(smiles)
         adj = self._graph_to_adj_mat(edges)
         if not self.multiple_bond_types:
@@ -127,6 +128,7 @@ class DrugProteinDataset(Dataset):
                           bond.GetEndAtomIdx()))
             assert self.bond_dict[str(bond.GetBondType())] != 3
         for atom in mol.GetAtoms():
+            # This could probably be spead up....
             nodes.append(onehot(self.dataset_info['atom_types'].index(atom.GetSymbol()),
                                 len(self.dataset_info['atom_types'])))
 
@@ -136,7 +138,7 @@ class DrugProteinDataset(Dataset):
         return nodes, edges, mol
 
     def _build_dataset_info(self):
-        self.dataset_info = {'atom_types': ["H", "C", "N", "O", "F", "S", "P", "Cl"]
+        self.dataset_info = {'atom_types': ["H", "C", "N", "O", "S", "P", "F", "Cl", "Br", "Fe"]
                              }
 
         self.bond_dict = {'SINGLE': 0, 'DOUBLE': 1, 'TRIPLE': 2, "AROMATIC": 3}
@@ -174,18 +176,17 @@ class PosDrugProteinDataset(DrugProteinDataset):
     def __getitem__(self, idx):
 
         drug_pos = prot_idx = idx
-        drug_neg = np.random.choice(self.all_drugs)
+        smiles_neg = np.random.choice(self.all_drugs)
 
-        smiles_pos = self.all_drugs[drug_idx]
-        smiles_neg = self.all_drugs[drug_neg]
+        smiles_pos = self.all_drugs[drug_pos]
         prot = self.all_prots[prot_idx]
 
         pos_nodes, pos_adj = self._preprocess_molecule(smiles_pos)
         neg_nodes, neg_adj = self._preprocess_molecule(smiles_neg)
 
-        sample = {'pos_node_features': pos_nodes, 'pos_adj_mat': pos_adj_mat,
-                  'neg_node_features': neg_nodes, 'neg_adj_mat': neg_adj_mat,
-                  'protein': prot, 'is_true': int(is_true)}
+        sample = {'pos_node_features': pos_nodes, 'pos_adj_mat': pos_adj,
+                  'neg_node_features': neg_nodes, 'neg_adj_mat': neg_adj,
+                  'protein': prot}
 
         if self.transform:
             sample = self.transform(sample)
@@ -231,13 +232,6 @@ class MergeSnE1(object):
 
         sample['features'] = full_features
         return sample
-
-
-def onehot(idx, len):
-    idx = np.array(idx)  # make sure this is an array
-    z = np.array([0 for _ in range(len)])
-    z[idx] = 1
-    return z
 
 
 def collate_fn(batch):
