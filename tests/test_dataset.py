@@ -2,7 +2,7 @@ import torch
 import pytest
 from binding_prediction.dataset import (
     DrugProteinDataset, PosDrugProteinDataset,
-    MergeSnE1, collate_fn, _load_datafile)
+    collate_fn, _load_datafile)
 from binding_prediction.utils import get_data_path
 
 
@@ -21,7 +21,7 @@ class TestDrugProteinDataset(object):
     @pytest.mark.parametrize('multiple_bond_types', [True, False])
     def test_output_shapes(self, precompute, multiple_bond_types):
         dset = DrugProteinDataset("data/example.txt", precompute=precompute,
-                multiple_bond_types=multiple_bond_types)
+                                  multiple_bond_types=multiple_bond_types)
         first_element = dset[0]
         assert(first_element['node_features'].shape[0] == 14)
         assert(first_element['adj_mat'].shape[0] == 14)
@@ -52,7 +52,6 @@ class TestDrugProteinDataset(object):
 
 
 class TestPosDrugProteinDataset(object):
-
     def test_getitem(self):
         datafile = get_data_path('sample_dataset2.txt')
         db = PosDrugProteinDataset(datafile=datafile, num_neg=2)
@@ -65,25 +64,6 @@ class TestPosDrugProteinDataset(object):
                    'NRLSELARRDGVESYLIDNASEIDPAWIVGKQHIGLTAGASAPQVL'
                    'VDGVLERLRELGAAGVSELEGEPESMVFALPKELRLRLVS')
         assert(res['protein'] == exp_seq)
-
-
-class TestTransform(object):
-    def test_merge(self):
-        node_features = torch.randn(13, 4)
-        protein = torch.randn(40, 2)
-        adj_mat = torch.randint(2, (13, 13)).float()
-        input_sample = {'node_features': node_features,
-                        'protein': protein,
-                        'adj_mat': adj_mat}
-
-        tf = MergeSnE1()
-        output_sample = tf(input_sample)
-        assert(torch.norm(output_sample['adj_mat'] - adj_mat) < 1E-6)
-
-        expected_shape = (13, 40, 6)
-        assert(output_sample['features'].shape == expected_shape)
-        assert(torch.norm(output_sample['features'][:, 2, :4] - node_features) < 1.e-6)
-        assert(torch.norm(output_sample['features'][3, :, 4:] - protein) < 1.e-6)
 
 
 def test_collate_fxn():

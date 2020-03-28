@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch.nn.utils.rnn import pad_sequence
 from .utils import _calc_padding, _unpack_from_convolution, _pack_for_convolution
 
 
@@ -27,6 +28,20 @@ class GraphAndConv(nn.Module):
         x = _unpack_from_convolution(x, batch_size)
         x[~mask] = 0.
         return x
+
+
+class MergeSnE1(nn.Module):
+    def __init__(self):
+        super(MergeSnE1, self).__init__()
+
+    def forward(self, features, embedding_list):
+        embedding = pad_sequence(embedding_list, batch_first=True, padding_value=0)
+        N_resid = embedding.shape[1]
+        N_nodes = features.shape[1]
+        nodes_expanded = torch.stack([features] * N_resid, dim=2)
+        embed_expanded = torch.stack([embedding] * N_nodes, dim=1)
+        full_features = torch.cat((nodes_expanded, embed_expanded), dim=3)
+        return full_features
 
 
 class RankingLayer(nn.Module):
