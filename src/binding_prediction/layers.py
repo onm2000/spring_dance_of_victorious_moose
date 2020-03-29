@@ -61,8 +61,7 @@ class MergeSnE1(nn.Module):
     def __init__(self):
         super(MergeSnE1, self).__init__()
 
-    def forward(self, features, embedding_list):
-        embedding = pad_sequence(embedding_list, batch_first=True, padding_value=0)
+    def forward(self, features, embedding):
         N_resid = embedding.shape[1]
         N_nodes = features.shape[1]
         nodes_expanded = torch.stack([features] * N_resid, dim=2)

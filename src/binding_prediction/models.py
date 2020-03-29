@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch.nn.utils.rnn import pad_sequence
 from .layers import GraphAndConv, MergeSnE1
 from dgl.nn.pytorch.conv import GraphConv
 from binding_prediction.dataset import build_dgl_graph_batch
@@ -23,10 +24,12 @@ class BindingModel(torch.nn.Module):
         Length corresponds to the number of layers.
         If not provided, defaults to 1 for every layer
     """
-    def __init__(self, in_channels, hidden_channel_list, out_channels,
-                 conv_kernel_sizes=None, nonlinearity=None, layer_cls=GraphAndConv):
+    def __init__(self, in_channels_graph, in_channels_prot, merge_channels_graph, merge_channels_prot,
+                 hidden_channel_list, out_channels, conv_kernel_sizes=None, nonlinearity=None, layer_cls=GraphAndConv):
         super(BindingModel, self).__init__()
-        self.gcs_stack = GraphAndConvStack(in_channels, hidden_channel_list,
+        self.in_graph = nn.Linear(in_channels_graph, merge_channels_graph)
+        self.in_prot = nn.Linear(in_channels_prot, merge_channels_prot)
+        self.gcs_stack = GraphAndConvStack(merge_channels_graph + merge_channels_prot, hidden_channel_list,
                                            out_channels, conv_kernel_sizes,
                                            nonlinearity, layer_cls)
         self.merge_graph_w_sequences = MergeSnE1()
@@ -38,14 +41,17 @@ class BindingModel(torch.nn.Module):
         if self.lm is None:
             raise ValueError('Language model is not initialized!')
         prot_embeddings = [self.lm(p_i) for p_i in prot_sequences]
-        y = self.merge_graph_w_sequences(x, prot_embeddings)
+        embeddings = pad_sequence(prot_embeddings, batch_first=True, padding_value=0)
+        x_node = self.in_graph(x)
+        x_prot = self.in_prot(embeddings)
+        y = self.merge_graph_w_sequences(x_node, x_prot)
         x_all = self.gcs_stack(adj, y)
         x_all = torch.cat(x_all, dim=-1)
         x_out = self.final_mix(x_all)
         x_out = torch.sum(torch.sum(x_out, dim=2), dim=1)
         return x_out
 
-    def load_language_model(self, cls, path):
+    def load_language_model(self, cls, path, device='cuda'):
         """
         Parameters
         ----------
@@ -55,7 +61,7 @@ class BindingModel(torch.nn.Module):
         path : filepath
             Filepath of the pretrained model.
         """
-        self.lm = cls(path)
+        self.lm = cls(path, device=device)
 
 
 class GraphAndConvStack(nn.Module):
