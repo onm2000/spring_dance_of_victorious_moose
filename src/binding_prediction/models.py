@@ -166,6 +166,7 @@ class DecomposableAttentionModel(nn.Module):
             activation = torch.relu if i < self.num_gnn_steps - 1 else torch.tanh
             nodes = activation(nodes)
         nodes = nodes.reshape(batch_size, max_nodes, -1)
+        protein_sequences = pad_sequence(protein_sequences, batch_first=True, padding_value=0)
         node_residue_cat = self.merge_graph_w_sequences(nodes, protein_sequences)
         seq_length = node_residue_cat.shape[2]
         node_residue_cat = node_residue_cat.reshape(batch_size, max_nodes * seq_length, node_dim + self.residue_dim)

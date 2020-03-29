@@ -85,7 +85,7 @@ class TestAttentionModel(object):
         feature_perm, adj_mats_perm = _permute_tensors(node_features, adj_mats, p_indices)
 
         cls, path = pretrained_language_models['elmo']
-        model = DecomposableAttentionModel(node_dim, num_gnn_steps=3, lm=cls(path))
+        model = DecomposableAttentionModel(node_dim, num_gnn_steps=3, lm=cls(path, device='cpu'))
         output = model(adj_mats, node_features, sample_sequences)
         output_from_perm = model(adj_mats_perm, feature_perm, sample_sequences)
         assert(torch.norm(output - output_from_perm) < 1e-3)
