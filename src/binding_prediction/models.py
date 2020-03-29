@@ -131,12 +131,12 @@ class GraphAndConvStack(nn.Module):
 
 
 class DecomposableAttentionModel(nn.Module):
-    def __init__(self, node_dim, num_gnn_layers, lm):
+    def __init__(self, node_dim, num_gnn_steps, lm):
         super().__init__()
         self.lm = lm
         self.residue_dim = self.lm.model.output_shape[-1]
         self.gnn = GraphConv(node_dim, node_dim)
-        self.num_gnn_layers = num_gnn_layers
+        self.num_gnn_steps = num_gnn_steps
         self.attn_weight_layer = nn.Sequential(nn.Linear(node_dim+self.residue_dim, 1), nn.Softmax(dim=-1))
         self.interaction_layer = nn.Sequential(
             nn.Linear(node_dim+self.residue_dim, node_dim + int(self.residue_dim/2)),
@@ -155,9 +155,9 @@ class DecomposableAttentionModel(nn.Module):
         batch_size, max_nodes, node_dim = nodes.shape
         batch_graph = build_dgl_graph_batch(nodes, adj_mats)
         nodes = batch_graph.ndata.pop('features')
-        for i in range(self.num_gnn_layers):
+        for i in range(self.num_gnn_steps):
             nodes = self.gnn(batch_graph, nodes)
-            activation = torch.relu if i < self.num_gnn_layers - 1 else torch.tanh
+            activation = torch.relu if i < self.num_gnn_steps - 1 else torch.tanh
             nodes = activation(nodes)
         nodes = nodes.reshape(batch_size, max_nodes, -1)
         node_residue_cat = self.merge_graph_w_sequences(nodes, protein_sequences)
@@ -168,3 +168,6 @@ class DecomposableAttentionModel(nn.Module):
         weighted_sum = (attn_weights * node_residue_interactions).sum(dim=1)
         score = self.output_layer(weighted_sum)
         return score
+
+MODELS_DICT = {'BindingModel': BindingModel,
+               'DecomposableAttentionModel':DecomposableAttentionModel}
