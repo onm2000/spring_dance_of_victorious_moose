@@ -65,9 +65,9 @@ class TestBindingModel(object):
 
         feature_perm, adj_mats_perm = _permute_tensors(node_features, adj_mats, p_indices)
 
-        model = BindingModel(516, [3], 3)
+        model = BindingModel(4, 512, 3, 3, [3], 3)
         cls, path = pretrained_language_models['elmo']
-        model.load_language_model(cls, path)
+        model.load_language_model(cls, path, device='cpu')
         output = model(adj_mats, node_features, sample_sequences)
         output_from_perm = model(adj_mats_perm, feature_perm, sample_sequences)
         assert(torch.norm(output - output_from_perm) < 1e-3)
