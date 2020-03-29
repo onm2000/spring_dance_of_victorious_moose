@@ -11,6 +11,7 @@ from binding_prediction import pretrained_language_models
 from torch import optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+from binding_prediction.models import MODELS_DICT
 
 
 def _parse_args():
@@ -24,6 +25,8 @@ def _parse_args():
                         help='Training dataset')
     parser.add_argument('--valid_dataset', '-v', type=str, default='data/molecules_valid_qm9.json',
                         help='Validation dataset')
+    parser.add_argument('--model_name', choices=['DecomposableAttentionModel', 'BindingModel'],
+                        default='BindingModel')
     parser.add_argument('--merge_molecule_channels', '-m', type=int, default=10,
                         help='Number of channels to use in the hidden layers')
     parser.add_argument('--merge_prot_channels', '-p', type=int, default=10,
@@ -32,6 +35,8 @@ def _parse_args():
                         help='Number of channels to use in the hidden layers')
     parser.add_argument('--conv_kernel_sizes', '-k', nargs='*', type=int, default=None,
                         help='Number of channels to use in the hidden layers')
+    parser.add_argument('--num_gnn_steps', '-n', type=int, default=3,
+                        help='Number of times to pass graph through GNN')
     parser.add_argument('--learning_rate', '-l', type=float, default=1e-3,
                         help='Learning Rate')
     parser.add_argument('--lmarch', '-a', type=str, default='elmo',
@@ -101,10 +106,15 @@ def main():
     in_channels_seq = 512
     in_channels = in_channels_seq + in_channels_nodes
     out_channels = 1
-    model = BindingModel(in_channels_nodes, in_channels_seq, args.merge_molecule_channels, 
-                         args.merge_prot_channels, args.hidden_channels, out_channels)
-    model = model.to(device=device)
-    model.load_language_model(lm, path)
+    model_cls = MODELS_DICT.get(args.model_name)
+    if args.model_name == 'BindingModel':
+        model = BindingModel(in_channels_nodes, in_channels_seq, args.merge_molecule_channels,
+                             args.merge_prot_channels, args.hidden_channels, out_channels)
+        model = model.to(device=device)
+        model.load_language_model(lm, path)
+    elif args.model_name == 'DecomposableAttentionModel':
+        model = model_cls(in_channels, args.num_gnn_steps, lm(path))
+        model = model.to(device=device)
 
     writer.add_text("Log", "Initialized Model.")
 
