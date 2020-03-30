@@ -110,12 +110,11 @@ def main():
     if args.model_name == 'BindingModel':
         model = BindingModel(in_channels_nodes, in_channels_seq, args.merge_molecule_channels,
                              args.merge_prot_channels, args.hidden_channels, out_channels)
-        model = model.to(device=device)
-        model.load_language_model(lm, path)
     elif args.model_name == 'DecomposableAttentionModel':
-        model = model_cls(in_channels, args.num_gnn_steps, lm(path))
-        model = model.to(device=device)
-
+        model = model_cls(in_channels_nodes, in_channels_seq, args.merge_molecule_channels,
+                        args.merge_prot_channels, args.num_gnn_steps)
+    model = model.to(device=device)
+    model.load_language_model(lm, path)
     writer.add_text("Log", "Initialized Model.")
 
     if os.path.isfile(args.dir + '/model_best.pt'):
