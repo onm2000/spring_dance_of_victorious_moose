@@ -45,12 +45,6 @@ def _parse_args():
     return args
 
 
-def calculate_loss(output, batch, device='cuda'):
-    targets = batch['is_true'].to(device=device).int().unsqueeze(-1)
-    bce_loss = F.binary_cross_entropy_with_logits(output, targets)
-    return bce_loss
-
-
 def run_model_on_batch(model, batch, device='cuda'):
     adj_mat = batch['adj_mat'].to(device=device)
     features = batch['node_features'].to(device=device)
@@ -101,11 +95,10 @@ def main():
     in_channels_seq = 512
     in_channels = in_channels_seq + in_channels_nodes
     out_channels = 1
-    model = BindingModel(in_channels_nodes, in_channels_seq, args.merge_molecule_channels, 
+    model = BindingModel(in_channels_nodes, in_channels_seq, args.merge_molecule_channels,
                          args.merge_prot_channels, args.hidden_channels, out_channels)
     model = model.to(device=device)
     model.load_language_model(lm, path)
-
     writer.add_text("Log", "Initialized Model.")
 
     if os.path.isfile(args.dir + '/model_best.pt'):
@@ -129,18 +122,17 @@ def main():
             # loss = calculate_loss(output, batch)
             loss.backward()
             optimizer.step()
-
             if i % 10 == 0:
-                print("Batch {}/{}.  Batch loss: {}".format(i, len(train_dataloader), loss))
+                print("Batch {}/{}.  Batch loss: {}".format(i, len(train_dataloader), loss.item()))
 
         model.eval()
         total_valid_loss = 0
         with torch.no_grad():
             for i, batch in enumerate(valid_dataloader):
-                output = run_model_on_batch(model, batch, device=device).squeeze(-1)
                 targets = batch['is_true'].to(device=device).float()
+                output = run_model_on_batch(model, batch, device=device).squeeze(-1)
                 loss = loss_fxn(targets, output)
-                total_valid_loss += loss
+                total_valid_loss += loss.item()
 
         avg_train_loss = total_train_loss / len(train_dataset)
         avg_valid_loss = total_valid_loss / len(valid_dataset)

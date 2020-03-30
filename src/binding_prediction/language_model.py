@@ -21,8 +21,13 @@ class LanguageModel(object):
 
 class Elmo(LanguageModel):
     # requires a GPU in order to test
-    def __init__(self, path, trainable=False, device='cuda'):
+    def __init__(self, path, trainable=False, device='cuda',
+                 per_process_gpu_memory_fraction=0.2):
         super(Elmo, self).__init__(path, device)
+        gpu_options = tf.GPUOptions(
+            per_process_gpu_memory_fraction=per_process_gpu_memory_fraction)
+        sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+
         m = tf.keras.models.load_model(path)
         layer = 'LSTM2'
         self.model = tf.keras.models.Model(inputs=[m.input],
