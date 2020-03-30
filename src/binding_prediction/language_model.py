@@ -32,20 +32,16 @@ class Elmo(LanguageModel):
     def __call__(self, x):
         prot = ProteinSequence(x)
         embed = self.model.predict(prot.onehot).squeeze()
-        return torch.Tensor(embed).to(self.device)
 
 
 class OneHot(LanguageModel):
     def __init__(self, path, device='cuda'):
-        super(OneHot, self).__init__()
+        super(OneHot, self).__init__(path, device)
         self.tla_codes = ["A", "R", "N", "D", "B", "C", "E", "Q", "Z", "G",
                           "H", "I", "L", "K", "M", "F", "P", "S", "T", "W",
                           "Y", "V"]
         self.num_words = len(self.tla_codes)
 
     def __call__(self, x):
-        embedding = []
-        for x_i in x:
-            emb_i = [onehot(self.tla_codes.index(w_i), self.num_words) for w_i in x]
-            embedding.append(torch.Tensor(emb_i).float().to(device=self.device))
-        return embedding
+        emb_i = [onehot(self.tla_codes.index(w_i), self.num_words) for w_i in x]
+        return torch.Tensor(emb_i).to(self.device)
