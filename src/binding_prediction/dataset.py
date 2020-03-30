@@ -8,6 +8,15 @@ import numpy as np
 import scipy.sparse as sps
 import pandas as pd
 
+all_elements = ["H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na",
+                "Mg", "Al", "Si", "P", "S", "Cl", "Ar", "K", "Ca", "Sc", "Ti",
+                "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Ga", "Ge", "As",
+                "Se", "Br", "Kr", "Rb", "Sr", "Y", "Zr", "Nb", "Mo", "Tc", "Ru",
+                "Rh", "Pd", "Ag", "Cd", "In", "Sn", "Sb", "Te", "I", "Xe", "Cs",
+                "Ba", "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb",
+                "Dy", "Ho", "Er", "Tm", "Yb", "Lu", "Hf", "Ta", "W", "Re", "Os",
+                "Ir", "Pt", "Au", "Hg", "Tl", "Pb", "Bi", "Po", "At", "Rn"]
+
 
 def _load_datafile(datafile):
     """
@@ -47,9 +56,9 @@ class DrugProteinDataset(Dataset):
 
         if fake_dist is None:
             def fake_dist():
-                drug_idx = np.random.choice(self.all_drugs)
-                embed_idx = np.random.choice(self.all_prots)
-                return drug_idx, embed_idx
+                smiles_idx = np.random.randint(len(self.all_drugs))
+                prot_idx = np.random.randint(len(self.all_prots))
+                return smiles_idx, prot_idx
         self.fake_dist = fake_dist
 
         # Build interaction matrix
@@ -62,14 +71,14 @@ class DrugProteinDataset(Dataset):
         self.transform = transform
 
     def __len__(self):
-        return len(self.data)
+        return len(self.all_drugs)
 
     def _preprocess_molecule(self, smiles):
         if self.precompute:
             nodes, edges = self.drug_graphs[smiles]
         else:
-            nodes, edges, __ = self._build_drug_graph(smiles)
-        adj = self._graph_to_adj_mat(edges)
+            nodes, edges, mol = self._build_drug_graph(smiles)
+        adj = self._graph_to_adj_mat(edges, len(nodes))
         if not self.multiple_bond_types:
             adj = torch.sum(adj, dim=2)
         return nodes, adj
@@ -80,7 +89,6 @@ class DrugProteinDataset(Dataset):
             drug_idx = prot_idx = idx
         else:
             drug_idx, prot_idx = self.fake_dist()
-
         smiles = self.all_drugs[drug_idx]
         prot = self.all_prots[prot_idx]
 
@@ -138,17 +146,19 @@ class DrugProteinDataset(Dataset):
         return nodes, edges, mol
 
     def _build_dataset_info(self):
-        self.dataset_info = {'atom_types': ["H", "C", "N", "O", "S", "P", "F", "Cl", "Br", "Fe"]
-                             }
+        # self.dataset_info = {'atom_types': ["H", "C", "N", "O", "S", "P", "F",
+        #     "Cl", "Br", "I", "Fe", "B", "Ce", "As", "Se", "K", "Mg", "Ca", "Mo", "Hg", "Na", "Pt", "Cd", "Sn", "Co", "Re", "Si", "Al"]
+        #                      }
+        self.dataset_info = {'atom_types': all_elements}
 
         self.bond_dict = {'SINGLE': 0, 'DOUBLE': 1, 'TRIPLE': 2, "AROMATIC": 3}
 
-    def _graph_to_adj_mat(self, edge_features):
-        max_size = max(torch.max(edge_features[:, 0]), torch.max(edge_features[:, 2])) + 1
-        adj_mat = torch.zeros(max_size, max_size, self.num_edge_features)
-        edge_features = torch.LongTensor(edge_features)
-        adj_mat[edge_features[:, 0], edge_features[:, 2], edge_features[:, 1]] = 1.
-        adj_mat = adj_mat.float()
+    def _graph_to_adj_mat(self, edge_features, num_atoms):
+        adj_mat = torch.zeros(num_atoms, num_atoms, self.num_edge_features)
+        if len(edge_features) > 0:
+            edge_features = torch.LongTensor(edge_features)
+            adj_mat[edge_features[:, 0], edge_features[:, 2], edge_features[:, 1]] = 1.
+            adj_mat = adj_mat.float()
         return adj_mat
 
     def need_kekulize(self, mol):
@@ -220,17 +230,12 @@ class PosDrugProteinDataset(DrugProteinDataset):
 def collate_fn(batch, prots_are_sequences=False):
     collated_batch = {}
     for prop in batch[0].keys():
-        if prop == 'adj_mat':
-            edge_mat = True
-        elif prop == 'protein':
-            if prots_are_sequences:
-                sequence_list = [mol[prop] for mol in batch]
-                collated_batch[prop] = sequence_list
-            else:
-                collated_batch[prop] = _batch_stack([mol[prop] for mol in batch], edge_mat=edge_mat)
+        if ((prop == 'protein') and prots_are_sequences):
+            sequence_list = [mol[prop] for mol in batch]
+            collated_batch[prop] = sequence_list
         else:
-            edge_mat = False
-        collated_batch[prop] = _batch_stack([mol[prop] for mol in batch], edge_mat=edge_mat)
+            is_adj_mat = (prop == 'adj_mat')
+            collated_batch[prop] = _batch_stack([mol[prop] for mol in batch], edge_mat=is_adj_mat)
 
     return collated_batch
 
