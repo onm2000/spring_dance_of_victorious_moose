@@ -45,12 +45,6 @@ def _parse_args():
     return args
 
 
-def calculate_loss(output, batch, device='cuda'):
-    targets = batch['is_true'].to(device=device).int().unsqueeze(-1)
-    bce_loss = F.binary_cross_entropy_with_logits(output, targets)
-    return bce_loss
-
-
 def run_model_on_batch(model, batch, device='cuda'):
     adj_mat = batch['adj_mat'].to(device=device)
     features = batch['node_features'].to(device=device)
