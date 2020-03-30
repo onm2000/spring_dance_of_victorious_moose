@@ -5,6 +5,14 @@ from binding_prediction.dataset import (
     collate_fn, _load_datafile)
 from binding_prediction.utils import get_data_path
 
+def get_input_sample():
+    node_features = torch.randn(13, 4)
+    protein = torch.randn(40, 2)
+    adj_mat = torch.randint(2, (13, 13)).float()
+    input_sample = {'node_features': node_features,
+                    'protein': protein,
+                    'adj_mat': adj_mat}
+    return input_sample
 
 class TestDataUtils(object):
     def test_load(self):

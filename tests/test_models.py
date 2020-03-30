@@ -2,6 +2,7 @@ import torch
 import pytest
 from binding_prediction.models import GraphAndConvStack, BindingModel
 from binding_prediction import pretrained_language_models
+from binding_prediction.layers import GraphAndConv, GraphAndConvDGL
 
 
 def _permute_tensors(features, adj_mats, p_indices):
@@ -19,8 +20,9 @@ class TestGraphAndConvStack(object):
     @pytest.mark.parametrize('num_intermediate', [None, 4])
     @pytest.mark.parametrize('hidden_channel_list', [[3], [2, 2], []])
     @pytest.mark.parametrize('explicit_conv_kernel_sizes', [True, False])
+    @pytest.mark.parametrize('layer_cls', [GraphAndConv, GraphAndConvDGL])
     def test_permutation_equivariance(self, sample_batch, num_intermediate,
-                                      hidden_channel_list, explicit_conv_kernel_sizes):
+                                      hidden_channel_list, explicit_conv_kernel_sizes, layer_cls):
         features, adj_mats = sample_batch
         B, N, __ = adj_mats.shape
         p_indices = [torch.randperm(N) for i in range(B)]
@@ -32,20 +34,21 @@ class TestGraphAndConvStack(object):
         else:
             conv_kernel_sizes = None
         gconv = GraphAndConvStack(3, hidden_channel_list, 1,
-                                  conv_kernel_sizes=conv_kernel_sizes)
+                                  conv_kernel_sizes=conv_kernel_sizes, layer_cls=layer_cls)
         output = gconv(adj_mats, features)[-1]
         permed_output = _permute_tensors(output, adj_mats, p_indices)[0]
         output_from_perm = gconv(adj_mats_perm, feature_perm)[-1]
         assert(torch.norm(permed_output - output_from_perm) < 1e-4)
 
     @pytest.mark.parametrize('hidden_channel_list', [[3], [2, 2], []])
-    def test_translational_equivariance(self, sample_batch, hidden_channel_list):
+    @pytest.mark.parametrize('layer_cls', [GraphAndConv, GraphAndConvDGL])
+    def test_translational_equivariance(self, sample_batch, hidden_channel_list, layer_cls):
         features, adj_mats = sample_batch
         features[:, :, -1] = 0.
         trans_features = torch.zeros(features.shape)
         trans_features[:, :, 1:] = features[:, :, :-1]
 
-        gconv = GraphAndConvStack(3, hidden_channel_list, 1)
+        gconv = GraphAndConvStack(3, hidden_channel_list, 1, layer_cls=layer_cls)
         output = gconv(adj_mats, features)[-1]
         output_from_translation = gconv(adj_mats, trans_features)[-1]
         assert(torch.norm(output[:, :, 4:-5] - output_from_translation[:, :, 5:-4]) < 1e-4)

@@ -23,13 +23,13 @@ class BindingModel(torch.nn.Module):
         If not provided, defaults to 1 for every layer
     """
     def __init__(self, in_channels_graph, in_channels_prot, merge_channels_graph, merge_channels_prot,
-                 hidden_channel_list, out_channels, conv_kernel_sizes=None, nonlinearity=None):
+                 hidden_channel_list, out_channels, conv_kernel_sizes=None, nonlinearity=None, layer_cls=GraphAndConv):
         super(BindingModel, self).__init__()
         self.in_graph = nn.Linear(in_channels_graph, merge_channels_graph)
         self.in_prot = nn.Linear(in_channels_prot, merge_channels_prot)
         self.gcs_stack = GraphAndConvStack(merge_channels_graph + merge_channels_prot, hidden_channel_list,
                                            out_channels, conv_kernel_sizes,
-                                           nonlinearity)
+                                           nonlinearity, layer_cls)
         self.merge_graph_w_sequences = MergeSnE1()
         total_number_inputs = sum(hidden_channel_list) + out_channels
         self.final_mix = nn.Linear(total_number_inputs, 1, bias=False)
@@ -82,7 +82,7 @@ class GraphAndConvStack(nn.Module):
     """
 
     def __init__(self, in_channels, hidden_channel_list, out_channels,
-                 conv_kernel_sizes=None, nonlinearity=None):
+                 conv_kernel_sizes=None, nonlinearity=None, layer_cls=GraphAndConv):
         super(GraphAndConvStack, self).__init__()
         if nonlinearity is None:
             nonlinearity = nn.ReLU
@@ -98,11 +98,11 @@ class GraphAndConvStack(nn.Module):
 
         in_channel_i = in_channels
         for i, out_channel_i in enumerate(hidden_channel_list):
-            conv_i = GraphAndConv(in_channel_i, out_channel_i,
+            conv_i = layer_cls(in_channel_i, out_channel_i,
                                   conv_kernel_size=conv_kernel_sizes[i])
             self.conv_layers.append(conv_i)
             in_channel_i = out_channel_i
-        conv_i = GraphAndConv(in_channel_i, out_channels,
+        conv_i = layer_cls(in_channel_i, out_channels,
                               conv_kernel_size=conv_kernel_sizes[-1])
         self.conv_layers.append(conv_i)
 
