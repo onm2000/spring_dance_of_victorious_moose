@@ -59,7 +59,7 @@ class RankingLayer(nn.Module):
         # See here: https://adoni.github.io/2017/11/08/word2vec-pytorch/
         super(RankingLayer, self).__init__()
         self.input_size = input_size
-        self.emb_dimension = emb_dimension
+        self.emb_dimension = emb_dim
         self.output = nn.Linear(input_size, emb_dim)
         self.init_emb()
 
@@ -84,4 +84,3 @@ class RankingLayer(nn.Module):
         score = F.logsigmoid(diff)
         losses = sum(score)
         return -1 * losses
-
