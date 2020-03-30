@@ -21,8 +21,13 @@ class LanguageModel(object):
 
 class Elmo(LanguageModel):
     # requires a GPU in order to test
-    def __init__(self, path, trainable=False, device='cuda'):
+    def __init__(self, path, trainable=False, device='cuda',
+                 per_process_gpu_memory_fraction=0.2):
         super(Elmo, self).__init__(path, device)
+        gpu_options = tf.GPUOptions(
+            per_process_gpu_memory_fraction=per_process_gpu_memory_fraction)
+        sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+
         m = tf.keras.models.load_model(path)
         layer = 'LSTM2'
         self.model = tf.keras.models.Model(inputs=[m.input],
@@ -32,20 +37,16 @@ class Elmo(LanguageModel):
     def __call__(self, x):
         prot = ProteinSequence(x)
         embed = self.model.predict(prot.onehot).squeeze()
-        return torch.Tensor(embed).to(self.device)
 
 
 class OneHot(LanguageModel):
     def __init__(self, path, device='cuda'):
-        super(OneHot, self).__init__()
+        super(OneHot, self).__init__(path, device)
         self.tla_codes = ["A", "R", "N", "D", "B", "C", "E", "Q", "Z", "G",
                           "H", "I", "L", "K", "M", "F", "P", "S", "T", "W",
                           "Y", "V"]
         self.num_words = len(self.tla_codes)
 
     def __call__(self, x):
-        embedding = []
-        for x_i in x:
-            emb_i = [onehot(self.tla_codes.index(w_i), self.num_words) for w_i in x]
-            embedding.append(torch.Tensor(emb_i).float().to(device=self.device))
-        return embedding
+        emb_i = [onehot(self.tla_codes.index(w_i), self.num_words) for w_i in x]
+        return torch.Tensor(emb_i).to(self.device)
