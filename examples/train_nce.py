@@ -6,7 +6,7 @@ import datetime
 from torch import nn
 import torch.nn.functional as F
 from binding_prediction.models import BindingModel
-from binding_prediction.dataset import DrugProteinDataset, collate_fn
+from binding_prediction.dataset import DrugProteinDataset, ComparisonDrugProteinDataset, collate_fn, collate_fn_triplet
 from binding_prediction import pretrained_language_models
 from torch import optim
 from torch.utils.data import DataLoader
@@ -41,6 +41,7 @@ def _parse_args():
                         help='Learning Rate')
     parser.add_argument('--lmarch', '-a', type=str, default='elmo',
                         help='Language Model Architecture')
+    parser.add_argument('--use_softmax', action='store_true', help='use softmax over (real, fake, fake) triples')
     parser.add_argument('--cuda', dest='cuda', action='store_true',
                         help='Use CUDA (default)')
     parser.add_argument('--no-cuda', '--cpu', dest='cuda', action='store_false',
@@ -50,12 +51,26 @@ def _parse_args():
     return args
 
 
-def run_model_on_batch(model, batch, device='cuda'):
+def run_model_on_bce_batch(model, batch, device='cuda'):
     adj_mat = batch['adj_mat'].to(device=device)
     features = batch['node_features'].to(device=device)
     sequences = batch['protein']
     out_features = model(adj_mat, features, sequences)
     return out_features
+
+
+def run_model_on_softmax_batch(model, multi_batch, device='cuda'):
+    outputs = [run_model_on_bce_batch(model, b, device) for b in multi_batch]
+    out_features = torch.cat(outputs, dim=1)
+    return out_features
+
+def get_bce_targets(batch, device):
+    return batch['is_true'].to(device=device).float()
+
+def get_softmax_targets(multi_batch, device):
+    targets = [get_bce_targets(b, device) for b in multi_batch]
+    targets = torch.nonzero(torch.stack(targets, dim=1))[:, 1]
+    return targets
 
 
 def initialize_logging(root_dir='./', logging_path=None):
@@ -86,17 +101,32 @@ def main():
 
     lm, path = pretrained_language_models[args.lmarch]
 
-    #### NEEDS CHANGING WITH DATASET? ####
-    train_dataset = DrugProteinDataset(args.train_dataset, prob_fake=0.5)
-    valid_dataset = DrugProteinDataset(args.valid_dataset, prob_fake=0.5)
-    ######################################
+    if args.use_softmax is True:
+        dataset_cls = ComparisonDrugProteinDataset
+        cfxn = lambda x : collate_fn_triplet(x, prots_are_sequences=True)
+        run_model_on_batch = run_model_on_softmax_batch
+        get_targets = get_softmax_targets
+        loss_fxn = nn.CrossEntropyLoss()
+    else:
+        dataset_cls = DrugProteinDataset
+        cfxn = lambda x : collate_fn(x, prots_are_sequences=True)
+        run_model_on_batch = run_model_on_bce_batch
+        get_targets = get_bce_targets
+        loss_fxn = nn.BCEWithLogitsLoss()
 
-    cfxn = lambda x : collate_fn(x, prots_are_sequences=True)
+
+    #### NEEDS CHANGING WITH DATASET? ####
+    train_dataset = dataset_cls(args.train_dataset, prob_fake=0.5)
+    valid_dataset = dataset_cls(args.valid_dataset, prob_fake=0.5)
+    ######################################
 
     train_dataloader = DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=cfxn)
     valid_dataloader = DataLoader(valid_dataset, args.batch_size, shuffle=True, collate_fn=cfxn)
 
-    in_channels_nodes = train_dataset[0]['node_features'].shape[-1]
+    if args.use_softmax is True:
+        in_channels_nodes = train_dataset[0][0]['node_features'].shape[-1]
+    else:
+        in_channels_nodes = train_dataset[0]['node_features'].shape[-1]
     in_channels_seq = 512
     in_channels = in_channels_seq + in_channels_nodes
     out_channels = 1
@@ -118,7 +148,6 @@ def main():
         writer.add_text("Log", "Succesfully loaded previous model")
 
     optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate)
-    loss_fxn = nn.BCEWithLogitsLoss()
     best_valid_loss = 1E8
 
     for n in range(args.num_epoch):
@@ -127,7 +156,7 @@ def main():
         for i, batch in enumerate(train_dataloader):
             optimizer.zero_grad()
             output = run_model_on_batch(model, batch, device=device).squeeze(-1)
-            targets = batch['is_true'].to(device=device).float()
+            targets = get_targets(batch, device)
             loss = loss_fxn(output, targets)
             # loss = calculate_loss(output, batch)
             loss.backward()

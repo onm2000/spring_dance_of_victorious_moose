@@ -158,6 +158,7 @@ class DecomposableAttentionModel(nn.Module):
         self.output_layer = nn.Linear(merge_channels_graph, 1)
 
         self.merge_graph_w_sequences = MergeSnE1()
+        self.lm = None
 
     def load_language_model(self, cls, path, device='cuda'):
         self.lm = cls(path, device=device)
