@@ -245,7 +245,7 @@ class ComparisonDrugProteinDataset(DrugProteinDataset):
         smiles = self.all_drugs[true_idx]
         interacting_proteins = self.all_prots[np.where(self.all_drugs == smiles)]
         non_interacting_proteins = np.setdiff1d(self.unique_prots, interacting_proteins)
-        prot = np.random.choice(non_interacting_proteins, 1)
+        prot = np.random.choice(non_interacting_proteins, 1)[0]
 
         true_drug_fake_prot_sample = {'node_features': nodes, 'adj_mat': adj_mat,
                   'protein': prot, 'is_true': 0}

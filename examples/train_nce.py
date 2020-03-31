@@ -138,7 +138,7 @@ def main():
         model = model_cls(in_channels_nodes, in_channels_seq, args.merge_molecule_channels,
                         args.merge_prot_channels, args.num_gnn_steps)
     model = model.to(device=device)
-    model.load_language_model(lm, path)
+    #model.load_language_model(lm, path)
     writer.add_text("Log", "Initialized Model.")
 
     if os.path.isfile(args.dir + '/model_best.pt'):
@@ -168,8 +168,8 @@ def main():
         total_valid_loss = 0
         with torch.no_grad():
             for i, batch in enumerate(valid_dataloader):
-                targets = batch['is_true'].to(device=device).float()
                 output = run_model_on_batch(model, batch, device=device).squeeze(-1)
+                targets = get_targets(batch, device)
                 loss = loss_fxn(output, targets)
                 total_valid_loss += loss.item()
 
