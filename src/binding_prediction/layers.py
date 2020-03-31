@@ -112,4 +112,3 @@ class RankingLayer(nn.Module):
         score = F.logsigmoid(diff)
         losses = sum(score)
         return -1 * losses
-
