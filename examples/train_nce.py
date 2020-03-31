@@ -138,7 +138,7 @@ def main():
         model = model_cls(in_channels_nodes, in_channels_seq, args.merge_molecule_channels,
                         args.merge_prot_channels, args.num_gnn_steps)
     model = model.to(device=device)
-    #model.load_language_model(lm, path)
+    model.load_language_model(lm, path)
     writer.add_text("Log", "Initialized Model.")
 
     if os.path.isfile(args.dir + '/model_best.pt'):
