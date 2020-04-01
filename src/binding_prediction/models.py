@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pad_sequence
-from .layers import GraphAndConv, MergeSnE1
+from .layers import GraphAndConv, MergeSnE1, RankingLayer
+import copy
 
 
 class BindingModel(torch.nn.Module):
@@ -60,6 +61,21 @@ class BindingModel(torch.nn.Module):
             Filepath of the pretrained model.
         """
         self.lm = cls(path, device=device)
+
+
+class PosBindingModel(nn.Module):
+
+    def __init__(self, input_size : int, emb_dim : int,
+                 bm : BindingModel):
+        self.bm = bm
+        self.ranking = RankingLayer(input_size, emb_dim)
+
+    def forward(self, pos_adj, pos_x,
+                neg_adj, neg_x,
+                prot_sequences):
+        pos_out = self.bm.forward(pos_adj, pos_x, prot_sequences)
+        neg_out = self.bm.forward(neg_adj, neg_x, prot_sequences)
+        return self.ranking.forward(pos_out, neg_out)
 
 
 class GraphAndConvStack(nn.Module):

@@ -5,8 +5,8 @@ import pickle
 import datetime
 from torch import nn
 import torch.nn.functional as F
-from binding_prediction.models import BindingModel
-from binding_prediction.dataset import DrugProteinDataset, collate_fn
+from binding_prediction.models import PosBindingModel
+from binding_prediction.dataset import PosDrugProteinDataset, collate_fn
 from binding_prediction import pretrained_language_models
 from torch import optim
 from torch.utils.data import DataLoader
@@ -46,11 +46,17 @@ def _parse_args():
 
 
 def run_model_on_batch(model, batch, device='cuda'):
-    adj_mat = batch['adj_mat'].to(device=device)
-    features = batch['node_features'].to(device=device)
-    sequences = batch['protein']
-    out_features = model(adj_mat, features, sequences)
-    return out_features
+
+    pos_nodes = batch['pos_node_features'].to(device=device)
+    pos_adj = batch['pos_adj_mat'].to(device=device)
+    neg_nodes = batch['neg_node_features'].to(device=device)
+    neg_adj = batch['neg_adj_mat'].to(device=device)
+    prot = batch['protein'].to(device=device)
+
+    loss = model(pos_adj, pos_nodes,
+                 neg_adj, neg_nodes, prot)
+
+    return loss
 
 
 def initialize_logging(root_dir='./', logging_path=None):
@@ -82,8 +88,8 @@ def main():
     lm, path = pretrained_language_models[args.lmarch]
 
     #### NEEDS CHANGING WITH DATASET? ####
-    train_dataset = DrugProteinDataset(args.train_dataset, prob_fake=0.5)
-    valid_dataset = DrugProteinDataset(args.valid_dataset, prob_fake=0.5)
+    train_dataset = PosDrugProteinDataset(args.train_dataset, num_neg=5)
+    valid_dataset = PosDrugProteinDataset(args.valid_dataset, num_neg=5)
     ######################################
 
     cfxn = lambda x : collate_fn(x, prots_are_sequences=True)
@@ -116,9 +122,7 @@ def main():
         total_train_loss = 0
         for i, batch in enumerate(train_dataloader):
             optimizer.zero_grad()
-            output = run_model_on_batch(model, batch, device=device).squeeze(-1)
-            targets = batch['is_true'].to(device=device).float()
-            loss = loss_fxn(output, targets)
+            loss = run_model_on_batch(model, batch, device=device).squeeze(-1)
             # loss = calculate_loss(output, batch)
             loss.backward()
             optimizer.step()
@@ -129,9 +133,7 @@ def main():
         total_valid_loss = 0
         with torch.no_grad():
             for i, batch in enumerate(valid_dataloader):
-                targets = batch['is_true'].to(device=device).float()
-                output = run_model_on_batch(model, batch, device=device).squeeze(-1)
-                loss = loss_fxn(output, targets)
+                loss = run_model_on_batch(model, batch, device=device).squeeze(-1)
                 total_valid_loss += loss.item()
 
         avg_train_loss = total_train_loss / len(train_dataset)
