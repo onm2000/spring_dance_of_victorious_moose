@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from binding_prediction.models import BindingModel
 from binding_prediction.dataset import DrugProteinDataset, ComparisonDrugProteinDataset, collate_fn, collate_fn_triplet
 from binding_prediction import pretrained_language_models
+from examples.train_nce import get_targets, run_model_on_batch
 from torch import optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -50,16 +51,16 @@ def _parse_args():
     return args
 
 
-def run_model_on_batch(model, batch, device='cuda'):
-    adj_mat = batch['adj_mat'].to(device=device)
-    features = batch['node_features'].to(device=device)
-    sequences = batch['protein']
-    out_features = model(adj_mat, features, sequences)
+def run_model_on_softmax_batch(model, multi_batch, device='cuda'):
+    outputs = [run_model_on_batch(model, b, device) for b in multi_batch]
+    out_features = torch.cat(outputs, dim=1)
     return out_features
 
 
-def get_targets(batch, device):
-    return batch['is_true'].to(device=device).float()
+def get_softmax_targets(multi_batch, device):
+    targets = [get_targets(b, device) for b in multi_batch]
+    targets = torch.nonzero(torch.stack(targets, dim=1))[:, 1]
+    return targets
 
 
 def initialize_logging(root_dir='./', logging_path=None):
@@ -90,16 +91,16 @@ def main():
 
     lm, path = pretrained_language_models[args.lmarch]
 
-    train_dataset = DrugProteinDataset(args.train_dataset, prob_fake=0.5)
-    valid_dataset = DrugProteinDataset(args.valid_dataset, prob_fake=0.5)
+    train_dataset = ComparisonDrugProteinDataset(args.train_dataset)
+    valid_dataset = ComparisonDrugProteinDataset(args.valid_dataset)
 
-    cfxn = lambda x : collate_fn(x, prots_are_sequences=True)
+    cfxn = lambda x: collate_fn_triplet(x, prots_are_sequences=True)
     train_dataloader = DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=cfxn)
     valid_dataloader = DataLoader(valid_dataset, args.batch_size, shuffle=True, collate_fn=cfxn)
 
-    loss_fxn = nn.BCEWithLogitsLoss()
+    loss_fxn = nn.CrossEntropyLoss()
 
-    in_channels_nodes = train_dataset[0]['node_features'].shape[-1]
+    in_channels_nodes = train_dataset[0][0]['node_features'].shape[-1]
     in_channels_seq = 512
     out_channels = 1
     model_cls = MODELS_DICT.get(args.model_name)
@@ -124,30 +125,28 @@ def main():
 
     for n in range(args.num_epoch):
         model.train()
-        total_train_loss = 0
         for i, batch in enumerate(train_dataloader):
             optimizer.zero_grad()
-            output = run_model_on_batch(model, batch, device=device).squeeze(-1)
-            targets = get_targets(batch, device)
+            output = run_model_on_softmax_batch(model, batch, device=device).squeeze(-1)
+            targets = get_softmax_targets(batch, device)
             loss = loss_fxn(output, targets)
             loss.backward()
             optimizer.step()
             if i % 10 == 0:
                 print("Batch {}/{}.  Batch loss: {}".format(i, len(train_dataloader), loss.item()))
+                writer.add_scalar('train_loss', loss.item())
 
         model.eval()
         total_valid_loss = 0
         with torch.no_grad():
             for i, batch in enumerate(valid_dataloader):
-                output = run_model_on_batch(model, batch, device=device).squeeze(-1)
-                targets = get_targets(batch, device)
+                output = run_model_on_softmax_batch(model, batch, device=device).squeeze(-1)
+                targets = get_softmax_targets(batch, device)
                 loss = loss_fxn(output, targets)
                 total_valid_loss += loss.item()
 
-        avg_train_loss = total_train_loss / len(train_dataset)
         avg_valid_loss = total_valid_loss / len(valid_dataset)
-        print("Epoch {} Complete. Train loss: {}.  Valid loss: {}.".format(n, avg_train_loss, avg_valid_loss))
-        writer.add_scalar('training_loss', avg_train_loss)
+        print("Epoch {} Complete.  Valid loss: {}.".format(n, avg_valid_loss))
         writer.add_scalar('validation_loss', avg_valid_loss)
 
         torch.save(model.state_dict(), args.dir + '/model_current.pt')
