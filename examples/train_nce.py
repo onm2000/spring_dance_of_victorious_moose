@@ -118,7 +118,7 @@ def main():
             optimizer.zero_grad()
             output = run_model_on_batch(model, batch, device=device).squeeze(-1)
             targets = batch['is_true'].to(device=device).float()
-            loss = loss_fxn(targets, output)
+            loss = loss_fxn(output, targets)
             # loss = calculate_loss(output, batch)
             loss.backward()
             optimizer.step()
@@ -131,7 +131,7 @@ def main():
             for i, batch in enumerate(valid_dataloader):
                 targets = batch['is_true'].to(device=device).float()
                 output = run_model_on_batch(model, batch, device=device).squeeze(-1)
-                loss = loss_fxn(targets, output)
+                loss = loss_fxn(output, targets)
                 total_valid_loss += loss.item()
 
         avg_train_loss = total_train_loss / len(train_dataset)
