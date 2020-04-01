@@ -4,13 +4,13 @@ import os
 import pickle
 import datetime
 from torch import nn
-import torch.nn.functional as F
 from binding_prediction.models import BindingModel
 from binding_prediction.dataset import DrugProteinDataset, collate_fn
 from binding_prediction import pretrained_language_models
 from torch import optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+from binding_prediction.models import MODELS_DICT
 
 
 def _parse_args():
@@ -24,6 +24,8 @@ def _parse_args():
                         help='Training dataset')
     parser.add_argument('--valid_dataset', '-v', type=str, default='data/molecules_valid_qm9.json',
                         help='Validation dataset')
+    parser.add_argument('--model_name', choices=['DecomposableAttentionModel', 'BindingModel'],
+                        default='BindingModel')
     parser.add_argument('--merge_molecule_channels', '-m', type=int, default=10,
                         help='Number of channels to use in the hidden layers')
     parser.add_argument('--merge_prot_channels', '-p', type=int, default=10,
@@ -32,6 +34,8 @@ def _parse_args():
                         help='Number of channels to use in the hidden layers')
     parser.add_argument('--conv_kernel_sizes', '-k', nargs='*', type=int, default=None,
                         help='Number of channels to use in the hidden layers')
+    parser.add_argument('--num_gnn_steps', '-n', type=int, default=3,
+                        help='Number of times to pass graph through GNN')
     parser.add_argument('--learning_rate', '-l', type=float, default=1e-3,
                         help='Learning Rate')
     parser.add_argument('--lmarch', '-a', type=str, default='elmo',
@@ -51,6 +55,10 @@ def run_model_on_batch(model, batch, device='cuda'):
     sequences = batch['protein']
     out_features = model(adj_mat, features, sequences)
     return out_features
+
+
+def get_targets(batch, device):
+    return batch['is_true'].to(device=device).float()
 
 
 def initialize_logging(root_dir='./', logging_path=None):
@@ -81,22 +89,25 @@ def main():
 
     lm, path = pretrained_language_models[args.lmarch]
 
-    #### NEEDS CHANGING WITH DATASET? ####
     train_dataset = DrugProteinDataset(args.train_dataset, prob_fake=0.5)
     valid_dataset = DrugProteinDataset(args.valid_dataset, prob_fake=0.5)
-    ######################################
 
     cfxn = lambda x : collate_fn(x, prots_are_sequences=True)
-
     train_dataloader = DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=cfxn)
     valid_dataloader = DataLoader(valid_dataset, args.batch_size, shuffle=True, collate_fn=cfxn)
 
+    loss_fxn = nn.BCEWithLogitsLoss()
+
     in_channels_nodes = train_dataset[0]['node_features'].shape[-1]
     in_channels_seq = 512
-    in_channels = in_channels_seq + in_channels_nodes
     out_channels = 1
-    model = BindingModel(in_channels_nodes, in_channels_seq, args.merge_molecule_channels,
-                         args.merge_prot_channels, args.hidden_channels, out_channels)
+    model_cls = MODELS_DICT.get(args.model_name)
+    if args.model_name == 'BindingModel':
+        model = BindingModel(in_channels_nodes, in_channels_seq, args.merge_molecule_channels,
+                             args.merge_prot_channels, args.hidden_channels, out_channels)
+    elif args.model_name == 'DecomposableAttentionModel':
+        model = model_cls(in_channels_nodes, in_channels_seq, args.merge_molecule_channels,
+                        args.merge_prot_channels, args.num_gnn_steps)
     model = model.to(device=device)
     model.load_language_model(lm, path)
     writer.add_text("Log", "Initialized Model.")
@@ -108,7 +119,6 @@ def main():
         writer.add_text("Log", "Succesfully loaded previous model")
 
     optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate)
-    loss_fxn = nn.BCEWithLogitsLoss()
     best_valid_loss = 1E8
 
     for n in range(args.num_epoch):
@@ -117,9 +127,9 @@ def main():
         for i, batch in enumerate(train_dataloader):
             optimizer.zero_grad()
             output = run_model_on_batch(model, batch, device=device).squeeze(-1)
-            targets = batch['is_true'].to(device=device).float()
-            loss = loss_fxn(output, targets)
             # loss = calculate_loss(output, batch)
+            targets = get_targets(batch, device)
+            loss = loss_fxn(output, targets)
             loss.backward()
             optimizer.step()
             if i % 10 == 0:
@@ -129,8 +139,8 @@ def main():
         total_valid_loss = 0
         with torch.no_grad():
             for i, batch in enumerate(valid_dataloader):
-                targets = batch['is_true'].to(device=device).float()
                 output = run_model_on_batch(model, batch, device=device).squeeze(-1)
+                targets = get_targets(batch, device)
                 loss = loss_fxn(output, targets)
                 total_valid_loss += loss.item()
 

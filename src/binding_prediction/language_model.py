@@ -37,6 +37,7 @@ class Elmo(LanguageModel):
     def __call__(self, x):
         prot = ProteinSequence(x)
         embed = self.model.predict(prot.onehot).squeeze()
+        return torch.Tensor(embed).to(self.device)
 
 
 class OneHot(LanguageModel):

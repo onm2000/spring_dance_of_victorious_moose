@@ -4,29 +4,29 @@ import os
 import pickle
 import datetime
 from torch import nn
-import torch.nn.functional as F
-from binding_prediction.models import PosBindingModel
-from binding_prediction.dataset import PosDrugProteinDataset, collate_fn
+from binding_prediction.models import BindingModel
+from binding_prediction.dataset import ComparisonDrugProteinDataset, collate_fn_triplet
 from binding_prediction import pretrained_language_models
+from examples.train_nce import get_targets, run_model_on_batch, initialize_logging
 from torch import optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+from binding_prediction.models import MODELS_DICT
 
 
 def _parse_args():
     parser = argparse.ArgumentParser(description='Train on a binding database.')
     parser.add_argument('--num-epoch', '-e', type=int, default=256,
                         help='Number of epochs to train (default: 255)')
-    parser.add_argument('--dir', '-d', type=str, default='.',
-                        help='Directory to which to save the model.')
+    parser.add_argument('--dir', '-d', type=str, default='.', help='Directory to which to save the model.')
     parser.add_argument('--batch-size', '-b', type=int, default=20,
                         help='Mini-batch size (default: 25)')
-    parser.add_argument('--train_dataset', '-t', type=str,
-                        default='data/molecules_train_qm9.json',
+    parser.add_argument('--train_dataset', '-t', type=str, default='data/molecules_train_qm9.json',
                         help='Training dataset')
-    parser.add_argument('--valid_dataset', '-v', type=str,
-                        default='data/molecules_valid_qm9.json',
+    parser.add_argument('--valid_dataset', '-v', type=str, default='data/molecules_valid_qm9.json',
                         help='Validation dataset')
+    parser.add_argument('--model_name', choices=['DecomposableAttentionModel', 'BindingModel'],
+                        default='BindingModel')
     parser.add_argument('--merge_molecule_channels', '-m', type=int, default=10,
                         help='Number of channels to use in the hidden layers')
     parser.add_argument('--merge_prot_channels', '-p', type=int, default=10,
@@ -35,6 +35,8 @@ def _parse_args():
                         help='Number of channels to use in the hidden layers')
     parser.add_argument('--conv_kernel_sizes', '-k', nargs='*', type=int, default=None,
                         help='Number of channels to use in the hidden layers')
+    parser.add_argument('--num_gnn_steps', '-n', type=int, default=3,
+                        help='Number of times to pass graph through GNN')
     parser.add_argument('--learning_rate', '-l', type=float, default=1e-3,
                         help='Learning Rate')
     parser.add_argument('--lmarch', '-a', type=str, default='elmo',
@@ -48,27 +50,16 @@ def _parse_args():
     return args
 
 
-def run_model_on_batch(model, batch, device='cuda'):
-
-    pos_nodes = batch['pos_node_features'].to(device=device)
-    pos_adj = batch['pos_adj_mat'].to(device=device)
-    neg_nodes = batch['neg_node_features'].to(device=device)
-    neg_adj = batch['neg_adj_mat'].to(device=device)
-    sequences = batch['protein']
-
-    loss = model(pos_adj, pos_nodes,
-                 neg_adj, neg_nodes, sequences)
-    return loss
+def run_model_on_softmax_batch(model, multi_batch, device='cuda'):
+    outputs = [run_model_on_batch(model, b, device) for b in multi_batch]
+    out_features = torch.cat(outputs, dim=1)
+    return out_features
 
 
-def initialize_logging(root_dir='./', logging_path=None):
-    if logging_path is None:
-        basename = "logdir"
-        suffix = datetime.datetime.now().strftime("%y%m%d_%H%M%S")
-        logging_path = "_".join([basename, suffix])
-    full_path = root_dir + logging_path
-    writer = SummaryWriter(full_path)
-    return writer
+def get_softmax_targets(multi_batch, device):
+    targets = [get_targets(b, device) for b in multi_batch]
+    targets = torch.nonzero(torch.stack(targets, dim=1))[:, 1]
+    return targets
 
 
 def main():
@@ -89,30 +80,25 @@ def main():
 
     lm, path = pretrained_language_models[args.lmarch]
 
-    #### NEEDS CHANGING WITH DATASET? ####
-    train_dataset = PosDrugProteinDataset(datafile=args.train_dataset, num_neg=5)
-    valid_dataset = PosDrugProteinDataset(datafile=args.valid_dataset, num_neg=5)
-    ######################################
+    train_dataset = ComparisonDrugProteinDataset(args.train_dataset)
+    valid_dataset = ComparisonDrugProteinDataset(args.valid_dataset)
 
-    cfxn = lambda x : collate_fn(x, prots_are_sequences=True)
+    cfxn = lambda x: collate_fn_triplet(x, prots_are_sequences=True)
+    train_dataloader = DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=cfxn)
+    valid_dataloader = DataLoader(valid_dataset, args.batch_size, shuffle=True, collate_fn=cfxn)
 
-    train_dataloader = DataLoader(train_dataset, args.batch_size,
-                                  shuffle=True, collate_fn=cfxn, drop_last=True)
-    valid_dataloader = DataLoader(valid_dataset, args.batch_size,
-                                  shuffle=True, collate_fn=cfxn, drop_last=True)
+    loss_fxn = nn.CrossEntropyLoss()
 
-    in_channels_nodes = train_dataset[0]['pos_node_features'].shape[-1]
+    in_channels_nodes = train_dataset[0][0]['node_features'].shape[-1]
     in_channels_seq = 512
-    in_channels = in_channels_seq + in_channels_nodes
-    out_channels = 10
-    model = PosBindingModel(
-        out_channels, out_channels,
-        in_channels_graph=in_channels_nodes, in_channels_prot=in_channels_seq,
-        merge_channels_graph=args.merge_molecule_channels,
-        merge_channels_prot=args.merge_prot_channels,
-        hidden_channel_list=args.hidden_channels,
-        out_channels=out_channels, final_channels=out_channels)
-
+    out_channels = 1
+    model_cls = MODELS_DICT.get(args.model_name)
+    if args.model_name == 'BindingModel':
+        model = BindingModel(in_channels_nodes, in_channels_seq, args.merge_molecule_channels,
+                             args.merge_prot_channels, args.hidden_channels, out_channels)
+    elif args.model_name == 'DecomposableAttentionModel':
+        model = model_cls(in_channels_nodes, in_channels_seq, args.merge_molecule_channels,
+                        args.merge_prot_channels, args.num_gnn_steps)
     model = model.to(device=device)
     model.load_language_model(lm, path)
     writer.add_text("Log", "Initialized Model.")
@@ -128,27 +114,28 @@ def main():
 
     for n in range(args.num_epoch):
         model.train()
-        total_train_loss = 0
         for i, batch in enumerate(train_dataloader):
             optimizer.zero_grad()
-            loss = run_model_on_batch(model, batch, device=device).squeeze(-1)
-            # loss = calculate_loss(output, batch)
+            output = run_model_on_softmax_batch(model, batch, device=device).squeeze(-1)
+            targets = get_softmax_targets(batch, device)
+            loss = loss_fxn(output, targets)
             loss.backward()
             optimizer.step()
             if i % 10 == 0:
                 print("Batch {}/{}.  Batch loss: {}".format(i, len(train_dataloader), loss.item()))
+                writer.add_scalar('train_loss', loss.item())
 
         model.eval()
         total_valid_loss = 0
         with torch.no_grad():
             for i, batch in enumerate(valid_dataloader):
-                loss = run_model_on_batch(model, batch, device=device).squeeze(-1)
+                output = run_model_on_softmax_batch(model, batch, device=device).squeeze(-1)
+                targets = get_softmax_targets(batch, device)
+                loss = loss_fxn(output, targets)
                 total_valid_loss += loss.item()
 
-        avg_train_loss = total_train_loss / len(train_dataset)
         avg_valid_loss = total_valid_loss / len(valid_dataset)
-        print("Epoch {} Complete. Train loss: {}.  Valid loss: {}.".format(n, avg_train_loss, avg_valid_loss))
-        writer.add_scalar('training_loss', avg_train_loss)
+        print("Epoch {} Complete.  Valid loss: {}.".format(n, avg_valid_loss))
         writer.add_scalar('validation_loss', avg_valid_loss)
 
         torch.save(model.state_dict(), args.dir + '/model_current.pt')

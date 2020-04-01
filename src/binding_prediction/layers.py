@@ -1,11 +1,16 @@
 import torch
 import torch.nn as nn
+from torch.nn.utils.rnn import pad_sequence
+import torch.nn.functional as F
+from dgl.nn.pytorch.conv import GraphConv
+import math
 from .utils import _calc_padding, _unpack_from_convolution, _pack_for_convolution
+from binding_prediction.dataset import build_dgl_graph_batch
 
 
-class GraphAndConv(nn.Module):
+class GraphAndConvParent(nn.Module):
     def __init__(self, in_channels, out_channels, conv_kernel_size=1, intermediate_channels=None):
-        super(GraphAndConv, self).__init__()
+        super().__init__()
         if intermediate_channels is None:
             intermediate_channels = out_channels
         self.lin = nn.Linear(2*in_channels, intermediate_channels)
@@ -15,6 +20,10 @@ class GraphAndConv(nn.Module):
         self.in_channels = in_channels
         self.intermediate_channels = intermediate_channels
         self.out_channels = out_channels
+
+class GraphAndConv(GraphAndConvParent):
+    def __init__(self, in_channels, out_channels, conv_kernel_size=1, intermediate_channels=None):
+        super().__init__(in_channels, out_channels, conv_kernel_size, intermediate_channels)
 
     def forward(self, adj, inputs):
         batch_size = inputs.shape[0]
@@ -28,6 +37,25 @@ class GraphAndConv(nn.Module):
         x[~mask] = 0.
         return x
 
+class GraphAndConvDGL(GraphAndConvParent):
+    def __init__(self, in_channels, out_channels, conv_kernel_size=1, intermediate_channels=None):
+        super().__init__(in_channels, out_channels, conv_kernel_size, intermediate_channels)
+        self.gnn = GraphConv(in_channels, in_channels)
+
+    def forward(self, adj, inputs):
+        batch_size = inputs.shape[0]
+        g = build_dgl_graph_batch(inputs, adj)
+        inputs = g.ndata['features']
+        mask = adj.sum(dim=2).bool()
+
+        x = self.gnn(g, inputs)
+        x = torch.cat((x, inputs), dim=-1)
+        x = self.lin(x)
+        x = torch.transpose(x, 1, 2)
+        x = self.conv(x)
+        x = _unpack_from_convolution(x, batch_size)
+        x[~mask] = 0.
+        return x
 
 class MergeSnE1(nn.Module):
     def __init__(self):
@@ -82,5 +110,5 @@ class RankingLayer(nn.Module):
         neg_out = self.output(neg)
         diff = pos - neg_out
         score = F.logsigmoid(diff)
-        losses = sum(score)
+        losses = sum(sum(score))
         return -1 * losses

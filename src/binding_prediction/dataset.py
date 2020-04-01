@@ -1,3 +1,4 @@
+import dgl
 from torch.utils.data import Dataset
 from rdkit.Chem import rdmolops
 from rdkit import Chem
@@ -7,6 +8,7 @@ import torch
 import numpy as np
 import scipy.sparse as sps
 import pandas as pd
+
 
 all_elements = ["H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na",
                 "Mg", "Al", "Si", "P", "S", "Cl", "Ar", "K", "Ca", "Sc", "Ti",
@@ -226,18 +228,59 @@ class PosDrugProteinDataset(DrugProteinDataset):
                 for _ in range(self.num_neg):
                     yield self.__getitem__(i)
 
+class ComparisonDrugProteinDataset(DrugProteinDataset):
+    def __getitem__(self, idx):
+        # true sample
+        smiles = self.all_drugs[idx]
+        prot = self.all_prots[idx]
+
+        nodes, adj_mat = self._preprocess_molecule(smiles)
+
+        sample = {'node_features': nodes, 'adj_mat': adj_mat, 'smiles': smiles,
+                  'protein': prot, 'is_true': 1}
+
+        if self.transform:
+            sample = self.transform(sample)
+
+        # fake sample 1
+        smiles = self.all_drugs[idx]
+        interacting_proteins = self.all_prots[np.where(self.all_drugs == smiles)]
+        non_interacting_proteins = np.setdiff1d(self.unique_prots, interacting_proteins)
+        prot = np.random.choice(non_interacting_proteins, 1)[0]
+
+        same_drug_other_prot_sample = {'node_features': nodes, 'adj_mat': adj_mat,
+                'smiles': smiles, 'protein': prot, 'is_true': 0}
+
+        # fake sample 2
+        prot = self.all_prots[idx]
+        interacting_drugs = self.all_drugs[np.where(self.all_prots == prot)]
+        non_interacting_drugs = np.setdiff1d(self.unique_drugs, interacting_drugs)
+        smiles = np.random.choice(non_interacting_drugs, 1)[0]
+        nodes, adj_mat = self._preprocess_molecule(smiles)
+
+        same_prot_other_drug_sample = {'node_features': nodes, 'adj_mat': adj_mat,
+                        'smiles': smiles, 'protein': prot, 'is_true': 0}
+
+        return (sample, same_drug_other_prot_sample, same_prot_other_drug_sample)
 
 def collate_fn(batch, prots_are_sequences=False):
     collated_batch = {}
     for prop in batch[0].keys():
-        if ((prop == 'protein') and prots_are_sequences):
+        if (('protein' in prop) and prots_are_sequences):
             sequence_list = [mol[prop] for mol in batch]
             collated_batch[prop] = sequence_list
         else:
-            is_adj_mat = (prop == 'adj_mat')
+            is_adj_mat = ('adj_mat' in prop)
             collated_batch[prop] = _batch_stack([mol[prop] for mol in batch], edge_mat=is_adj_mat)
 
     return collated_batch
+
+def collate_fn_triplet(triplet_batch, prots_are_sequences=False):
+    transposed_triplet_batch = list(zip(*triplet_batch))
+    real_batch = collate_fn(transposed_triplet_batch[0], prots_are_sequences)
+    fake_batch_1 = collate_fn(transposed_triplet_batch[1], prots_are_sequences)
+    fake_batch_2 = collate_fn(transposed_triplet_batch[2], prots_are_sequences)
+    return (real_batch, fake_batch_1, fake_batch_2)
 
 
 def _batch_stack(props, edge_mat=False):
@@ -279,3 +322,21 @@ def _batch_stack(props, edge_mat=False):
             padded_tensor[idx, :this_atoms, :this_atoms] = prop
 
         return padded_tensor
+
+
+def build_dgl_graph(features, adj_mat):
+    g = dgl.DGLGraph()
+    N_nodes = features.shape[0]
+    g.add_nodes(N_nodes, {'features': features})
+    nonzero_coords = torch.nonzero(adj_mat)
+    u, v = nonzero_coords[:, 1], nonzero_coords[:, 0]
+    g.add_edges(u, v)
+    return g
+
+
+def build_dgl_graph_batch(batch_features, batch_adj_mat):
+    graphs = []
+    for i in range(len(batch_adj_mat)):
+        graphs.append(build_dgl_graph(batch_features[i], batch_adj_mat[i]))
+    graphs_batch = dgl.batch(graphs)
+    return graphs_batch
