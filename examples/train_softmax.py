@@ -7,7 +7,7 @@ from torch import nn
 from binding_prediction.models import BindingModel
 from binding_prediction.dataset import ComparisonDrugProteinDataset, collate_fn_triplet
 from binding_prediction import pretrained_language_models
-from examples.train_nce import get_targets, run_model_on_batch
+from examples.train_nce import get_targets, run_model_on_batch, initialize_logging
 from torch import optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -60,16 +60,6 @@ def get_softmax_targets(multi_batch, device):
     targets = [get_targets(b, device) for b in multi_batch]
     targets = torch.nonzero(torch.stack(targets, dim=1))[:, 1]
     return targets
-
-
-def initialize_logging(root_dir='./', logging_path=None):
-    if logging_path is None:
-        basename = "logdir"
-        suffix = datetime.datetime.now().strftime("%y%m%d_%H%M%S")
-        logging_path = "_".join([basename, suffix])
-    full_path = root_dir + logging_path
-    writer = SummaryWriter(full_path)
-    return writer
 
 
 def main():
