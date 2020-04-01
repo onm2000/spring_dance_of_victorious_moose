@@ -2,7 +2,7 @@ import torch
 import pytest
 from binding_prediction.dataset import (
     DrugProteinDataset, PosDrugProteinDataset,
-    collate_fn, _load_datafile)
+    ComparisonDrugProteinDataset, collate_fn, _load_datafile)
 from binding_prediction.utils import get_data_path
 
 def get_input_sample():
@@ -72,6 +72,19 @@ class TestPosDrugProteinDataset(object):
                    'NRLSELARRDGVESYLIDNASEIDPAWIVGKQHIGLTAGASAPQVL'
                    'VDGVLERLRELGAAGVSELEGEPESMVFALPKELRLRLVS')
         assert(res['protein'] == exp_seq)
+
+
+class TestComparisonDrugProteinDataset:
+    def test_getitem(self):
+        datafile = get_data_path('sample_dataset2.txt')
+        db = ComparisonDrugProteinDataset(datafile=datafile)
+        i = 0
+        samples = db[i]
+        all_interactions = list(zip(db.all_drugs, db.all_prots))
+        assert(db.all_drugs[i] == samples[0]['smiles'])
+        assert(db.all_prots[i] == samples[0]['protein'])
+        assert((samples[1]['smiles'], samples[1]['protein']) not in all_interactions)
+        assert((samples[2]['smiles'], samples[2]['protein']) not in all_interactions)
 
 
 def test_collate_fxn():

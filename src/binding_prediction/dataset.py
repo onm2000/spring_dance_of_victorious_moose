@@ -228,39 +228,39 @@ class PosDrugProteinDataset(DrugProteinDataset):
                     yield self.__getitem__(i)
 
 class ComparisonDrugProteinDataset(DrugProteinDataset):
-    def __getitem__(self, true_idx):
+    def __getitem__(self, idx):
         # true sample
-        smiles = self.all_drugs[true_idx]
-        prot = self.all_prots[true_idx]
+        smiles = self.all_drugs[idx]
+        prot = self.all_prots[idx]
 
         nodes, adj_mat = self._preprocess_molecule(smiles)
 
-        sample = {'node_features': nodes, 'adj_mat': adj_mat,
+        sample = {'node_features': nodes, 'adj_mat': adj_mat, 'smiles': smiles,
                   'protein': prot, 'is_true': 1}
 
         if self.transform:
             sample = self.transform(sample)
 
         # fake sample 1
-        smiles = self.all_drugs[true_idx]
+        smiles = self.all_drugs[idx]
         interacting_proteins = self.all_prots[np.where(self.all_drugs == smiles)]
         non_interacting_proteins = np.setdiff1d(self.unique_prots, interacting_proteins)
         prot = np.random.choice(non_interacting_proteins, 1)[0]
 
-        true_drug_fake_prot_sample = {'node_features': nodes, 'adj_mat': adj_mat,
-                  'protein': prot, 'is_true': 0}
+        same_drug_other_prot_sample = {'node_features': nodes, 'adj_mat': adj_mat,
+                'smiles': smiles, 'protein': prot, 'is_true': 0}
 
         # fake sample 2
-        prot = self.all_prots[true_idx]
+        prot = self.all_prots[idx]
         interacting_drugs = self.all_drugs[np.where(self.all_prots == prot)]
         non_interacting_drugs = np.setdiff1d(self.unique_drugs, interacting_drugs)
         smiles = np.random.choice(non_interacting_drugs, 1)[0]
         nodes, adj_mat = self._preprocess_molecule(smiles)
 
-        true_prot_fake_drug_sample = {'node_features': nodes, 'adj_mat': adj_mat,
-                         'protein': prot, 'is_true': 0}
+        same_prot_other_drug_sample = {'node_features': nodes, 'adj_mat': adj_mat,
+                        'smiles': smiles, 'protein': prot, 'is_true': 0}
 
-        return (sample, true_drug_fake_prot_sample, true_prot_fake_drug_sample)
+        return (sample, same_drug_other_prot_sample, same_prot_other_drug_sample)
 
 def collate_fn(batch, prots_are_sequences=False):
     collated_batch = {}
