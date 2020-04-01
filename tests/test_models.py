@@ -38,7 +38,6 @@ class TestGraphAndConvStack(object):
         output = gconv(adj_mats, features)[-1]
         permed_output = _permute_tensors(output, adj_mats, p_indices)[0]
         output_from_perm = gconv(adj_mats_perm, feature_perm)[-1]
-        # print(output_from_perm.shape, permed_output.shape, 'perm')
         assert(torch.norm(permed_output - output_from_perm) < 1e-4)
 
     @pytest.mark.parametrize('hidden_channel_list', [[3], [2, 2], []])
