@@ -7,7 +7,7 @@ from torch import nn
 from binding_prediction.models import BindingModel
 from binding_prediction.dataset import ComparisonDrugProteinDataset, collate_fn_triplet
 from binding_prediction import pretrained_language_models
-from examples.train_nce import get_targets, run_model_on_batch, initialize_logging
+from train_nce import get_targets, run_model_on_batch, initialize_logging
 from torch import optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
