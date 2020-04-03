@@ -11,7 +11,7 @@ from torch import optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from binding_prediction.models import MODELS_DICT
-
+import gc
 
 def _parse_args():
     parser = argparse.ArgumentParser(description='Train on a binding database.')
@@ -52,6 +52,7 @@ def _parse_args():
 def run_model_on_batch(model, batch, device='cuda'):
     adj_mat = batch['adj_mat'].to(device=device)
     features = batch['node_features'].to(device=device)
+    print(adj_mat.shape, features.shape)
     sequences = batch['protein']
     out_features = model(adj_mat, features, sequences)
     return out_features
@@ -114,7 +115,7 @@ def main():
 
     if os.path.isfile(args.dir + '/model_best.pt'):
         writer.add_text("Log", "Previous Model found.  Attempting to load previous best model...")
-        model_param_dict = torch.load('models/model_best.pt')
+        model_param_dict = torch.load(args.dir + '/model_best.pt')
         model.load_state_dict(model_param_dict)
         writer.add_text("Log", "Succesfully loaded previous model")
 
@@ -133,7 +134,9 @@ def main():
             loss.backward()
             optimizer.step()
             if i % 10 == 0:
-                print("Batch {}/{}.  Batch loss: {}".format(i, len(train_dataloader), loss.item()))
+                l = loss.item()
+                print("Batch {}/{}.  Batch loss: {}".format(i, len(train_dataloader), l))
+                torch.cuda.empty_cache()
 
         model.eval()
         total_valid_loss = 0
@@ -146,15 +149,18 @@ def main():
 
         avg_train_loss = total_train_loss / len(train_dataset)
         avg_valid_loss = total_valid_loss / len(valid_dataset)
-        print("Epoch {} Complete. Train loss: {}.  Valid loss: {}.".format(n, avg_train_loss, avg_valid_loss))
-        writer.add_scalar('training_loss', avg_train_loss)
-        writer.add_scalar('validation_loss', avg_valid_loss)
+        print("Epoch {} Complete. Train loss: {}.  Valid loss: {}.".format(
+            n, avg_train_loss, avg_valid_loss))
+        writer.add_scalar('training_loss', avg_train_loss, n)
+        writer.add_scalar('validation_loss', avg_valid_loss, n)
 
         torch.save(model.state_dict(), args.dir + '/model_current.pt')
         if avg_valid_loss < best_valid_loss:
             writer.add_text("Log", "Best validation loss achieved at %d." % n)
             torch.save(model.state_dict(), args.dir + '/model_best.pt')
             best_valid_loss = avg_valid_loss
+
+
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 import torch
 import argparse
 import os
-import pickle
+>import pickle
 import datetime
 from torch import nn
 import torch.nn.functional as F
@@ -136,7 +136,9 @@ def main():
             loss.backward()
             optimizer.step()
             if i % 10 == 0:
-                print("Batch {}/{}.  Batch loss: {}".format(i, len(train_dataloader), loss.item()))
+                l = loss.item()
+                print("Batch {}/{}.  Batch loss: {}".format(i, len(train_dataloader), l))
+                torch.cuda.empty_cache()
 
         model.eval()
         total_valid_loss = 0
@@ -148,8 +150,8 @@ def main():
         avg_train_loss = total_train_loss / len(train_dataset)
         avg_valid_loss = total_valid_loss / len(valid_dataset)
         print("Epoch {} Complete. Train loss: {}.  Valid loss: {}.".format(n, avg_train_loss, avg_valid_loss))
-        writer.add_scalar('training_loss', avg_train_loss)
-        writer.add_scalar('validation_loss', avg_valid_loss)
+        writer.add_scalar('training_loss', avg_train_loss, n)
+        writer.add_scalar('validation_loss', avg_valid_loss, n)
 
         torch.save(model.state_dict(), args.dir + '/model_current.pt')
         if avg_valid_loss < best_valid_loss:
