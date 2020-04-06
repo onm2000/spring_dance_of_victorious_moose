@@ -249,7 +249,7 @@ class ComparisonDrugProteinDataset(DrugProteinDataset):
         prot = np.random.choice(non_interacting_proteins, 1)[0]
 
         same_drug_other_prot_sample = {'node_features': nodes, 'adj_mat': adj_mat,
-                'smiles': smiles, 'protein': prot, 'is_true': 0}
+                                       'smiles': smiles, 'protein': prot, 'is_true': 0}
 
         # fake sample 2
         prot = self.all_prots[idx]
@@ -259,14 +259,15 @@ class ComparisonDrugProteinDataset(DrugProteinDataset):
         nodes, adj_mat = self._preprocess_molecule(smiles)
 
         same_prot_other_drug_sample = {'node_features': nodes, 'adj_mat': adj_mat,
-                        'smiles': smiles, 'protein': prot, 'is_true': 0}
+                                       'smiles': smiles, 'protein': prot, 'is_true': 0}
 
         return (sample, same_drug_other_prot_sample, same_prot_other_drug_sample)
+
 
 def collate_fn(batch, prots_are_sequences=False):
     collated_batch = {}
     for prop in batch[0].keys():
-        if (('protein' in prop) and prots_are_sequences):
+        if isinstance(batch[0][prop], str):
             sequence_list = [mol[prop] for mol in batch]
             collated_batch[prop] = sequence_list
         else:
@@ -274,6 +275,7 @@ def collate_fn(batch, prots_are_sequences=False):
             collated_batch[prop] = _batch_stack([mol[prop] for mol in batch], edge_mat=is_adj_mat)
 
     return collated_batch
+
 
 def collate_fn_triplet(triplet_batch, prots_are_sequences=False):
     transposed_triplet_batch = list(zip(*triplet_batch))
