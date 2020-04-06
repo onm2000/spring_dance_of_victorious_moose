@@ -1,6 +1,6 @@
 import torch
 import pytest
-from binding_prediction.models import GraphAndConvStack, BindingModel
+from binding_prediction.models import GraphAndConvStack, BindingModel, DecomposableAttentionModel
 from binding_prediction import pretrained_language_models
 from binding_prediction.layers import GraphAndConv, GraphAndConvDGL
 
@@ -71,3 +71,21 @@ class TestBindingModel(object):
         output = model(adj_mats, node_features, sample_sequences)
         output_from_perm = model(adj_mats_perm, feature_perm, sample_sequences)
         assert(torch.norm(output - output_from_perm) < 1e-3)
+
+class TestAttentionModel(object):
+    def test_permutation_invariance(self, sample_sequences):
+        batch_size, node_dim, max_nodes = 3, 5, 4
+        node_features = torch.randn(batch_size, max_nodes, node_dim)
+
+        adj_mats = torch.randint(2, size=(batch_size, max_nodes, max_nodes)).float()
+
+        p_indices = [torch.randperm(max_nodes) for i in range(batch_size)]
+
+        feature_perm, adj_mats_perm = _permute_tensors(node_features, adj_mats, p_indices)
+
+        cls, path = pretrained_language_models['elmo']
+        model = DecomposableAttentionModel(node_dim, 512, 2, 2, num_gnn_steps=3)
+        model.load_language_model(cls, path, device='cpu')
+        output = model(adj_mats, node_features, sample_sequences)
+        output_from_perm = model(adj_mats_perm, feature_perm, sample_sequences)
+        assert(torch.norm(output - output_from_perm) < 1e-2)
