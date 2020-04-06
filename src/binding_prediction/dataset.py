@@ -276,7 +276,6 @@ def collate_fn(batch, prots_are_sequences=False):
 
     return collated_batch
 
-
 def collate_fn_triplet(triplet_batch, prots_are_sequences=False):
     transposed_triplet_batch = list(zip(*triplet_batch))
     real_batch = collate_fn(transposed_triplet_batch[0], prots_are_sequences)
