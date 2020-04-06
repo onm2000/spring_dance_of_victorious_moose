@@ -9,6 +9,7 @@ import numpy as np
 import scipy.sparse as sps
 import pandas as pd
 
+
 all_elements = ["H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na",
                 "Mg", "Al", "Si", "P", "S", "Cl", "Ar", "K", "Ca", "Sc", "Ti",
                 "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Ga", "Ge", "As",
@@ -265,15 +266,14 @@ class ComparisonDrugProteinDataset(DrugProteinDataset):
 def collate_fn(batch, prots_are_sequences=False):
     collated_batch = {}
     for prop in batch[0].keys():
-        if ((prop == 'protein') and prots_are_sequences):
+        if (('protein' in prop) and prots_are_sequences):
             sequence_list = [mol[prop] for mol in batch]
             collated_batch[prop] = sequence_list
         else:
-            is_adj_mat = (prop == 'adj_mat')
+            is_adj_mat = ('adj_mat' in prop)
             collated_batch[prop] = _batch_stack([mol[prop] for mol in batch], edge_mat=is_adj_mat)
 
     return collated_batch
-
 
 def collate_fn_triplet(triplet_batch, prots_are_sequences=False):
     transposed_triplet_batch = list(zip(*triplet_batch))

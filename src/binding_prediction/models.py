@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pad_sequence
-from .layers import GraphAndConv, MergeSnE1
+from .layers import GraphAndConv, MergeSnE1, RankingLayer
 from dgl.nn.pytorch.conv import GraphConv
 from binding_prediction.dataset import build_dgl_graph_batch
 
@@ -24,8 +24,10 @@ class BindingModel(torch.nn.Module):
         Length corresponds to the number of layers.
         If not provided, defaults to 1 for every layer
     """
-    def __init__(self, in_channels_graph, in_channels_prot, merge_channels_graph, merge_channels_prot,
-                 hidden_channel_list, out_channels, conv_kernel_sizes=None, nonlinearity=None, layer_cls=GraphAndConv):
+    def __init__(self, in_channels_graph, in_channels_prot,
+                 merge_channels_graph, merge_channels_prot,
+                 hidden_channel_list, out_channels, final_channels=1,
+                 conv_kernel_sizes=None, nonlinearity=None, layer_cls=GraphAndConv):
         super(BindingModel, self).__init__()
         self.in_graph = nn.Linear(in_channels_graph, merge_channels_graph)
         self.in_prot = nn.Linear(in_channels_prot, merge_channels_prot)
@@ -34,7 +36,7 @@ class BindingModel(torch.nn.Module):
                                            nonlinearity, layer_cls)
         self.merge_graph_w_sequences = MergeSnE1()
         total_number_inputs = sum(hidden_channel_list) + out_channels
-        self.final_mix = nn.Linear(total_number_inputs, 1, bias=False)
+        self.final_mix = nn.Linear(total_number_inputs, final_channels, bias=False)
         self.lm = None
 
     def forward(self, adj, x, prot_sequences):
@@ -63,6 +65,33 @@ class BindingModel(torch.nn.Module):
         """
         self.lm = cls(path, device=device)
 
+
+class PosBindingModel(nn.Module):
+
+    def __init__(self, input_size, emb_dim, **kwargs):
+        super(PosBindingModel, self).__init__()
+
+        self.bm = BindingModel(**kwargs)
+        self.ranking = RankingLayer(input_size, emb_dim)
+
+    def forward(self, pos_adj, pos_x,
+                neg_adj, neg_x,
+                prot_sequences):
+        pos_out = self.bm.forward(pos_adj, pos_x, prot_sequences)
+        neg_out = self.bm.forward(neg_adj, neg_x, prot_sequences)
+        return self.ranking.forward(pos_out, neg_out)
+
+    def load_language_model(self, cls, path, device='cuda'):
+        """
+        Parameters
+        ----------
+        cls : Module name
+            Name of the Language model.
+            (i.e. binding_prediction.language_model.Elmo)
+        path : filepath
+            Filepath of the pretrained model.
+        """
+        self.bm.lm = cls(path, device=device)
 
 class GraphAndConvStack(nn.Module):
     """

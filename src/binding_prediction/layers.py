@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pad_sequence
-import torch.functional as F
+import torch.nn.functional as F
 from dgl.nn.pytorch.conv import GraphConv
 import math
 from .utils import _calc_padding, _unpack_from_convolution, _pack_for_convolution
@@ -110,5 +110,5 @@ class RankingLayer(nn.Module):
         neg_out = self.output(neg)
         diff = pos - neg_out
         score = F.logsigmoid(diff)
-        losses = sum(score)
+        losses = sum(sum(score))
         return -1 * losses
