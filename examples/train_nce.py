@@ -52,7 +52,6 @@ def _parse_args():
 def run_model_on_batch(model, batch, device='cuda'):
     adj_mat = batch['adj_mat'].to(device=device)
     features = batch['node_features'].to(device=device)
-    print(adj_mat.shape, features.shape)
     sequences = batch['protein']
     out_features = model(adj_mat, features, sequences)
     return out_features
@@ -136,6 +135,7 @@ def main():
             if i % 10 == 0:
                 l = loss.item()
                 print("Batch {}/{}.  Batch loss: {}".format(i, len(train_dataloader), l))
+                total_train_loss += l
                 torch.cuda.empty_cache()
 
         model.eval()
@@ -159,8 +159,6 @@ def main():
             writer.add_text("Log", "Best validation loss achieved at %d." % n)
             torch.save(model.state_dict(), args.dir + '/model_best.pt')
             best_valid_loss = avg_valid_loss
-
-
 
 
 if __name__ == "__main__":

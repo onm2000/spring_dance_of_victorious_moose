@@ -122,7 +122,7 @@ class DrugProteinDataset(Dataset):
         """
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
-            raise ValueError('Molecule construction failed on Inchi %s' % smiles)
+            raise ValueError('Molecule construction failed on Smiles %s' % smiles)
         # Kekulize it
         if self.need_kekulize(mol):
             rdmolops.Kekulize(mol)
