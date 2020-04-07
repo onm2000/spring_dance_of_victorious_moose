@@ -92,7 +92,7 @@ def main():
     train_dataset = DrugProteinDataset(args.train_dataset, prob_fake=0.5)
     valid_dataset = DrugProteinDataset(args.valid_dataset, prob_fake=0.5)
 
-    cfxn = lambda x : collate_fn(x, prots_are_sequences=True)
+    cfxn = lambda x: collate_fn(x, prots_are_sequences=True)
     train_dataloader = DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=cfxn)
     valid_dataloader = DataLoader(valid_dataset, args.batch_size, shuffle=True, collate_fn=cfxn)
 
@@ -107,7 +107,7 @@ def main():
                              args.merge_prot_channels, args.hidden_channels, out_channels)
     elif args.model_name == 'DecomposableAttentionModel':
         model = model_cls(in_channels_nodes, in_channels_seq, args.merge_molecule_channels,
-                        args.merge_prot_channels, args.num_gnn_steps)
+                          args.merge_prot_channels, args.num_gnn_steps)
     model = model.to(device=device)
     model.load_language_model(lm, path)
     writer.add_text("Log", "Initialized Model.")
@@ -127,7 +127,6 @@ def main():
         for i, batch in enumerate(train_dataloader):
             optimizer.zero_grad()
             output = run_model_on_batch(model, batch, device=device).squeeze(-1)
-            # loss = calculate_loss(output, batch)
             targets = get_targets(batch, device)
             loss = loss_fxn(output, targets)
             loss.backward()

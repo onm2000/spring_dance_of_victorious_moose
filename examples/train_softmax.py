@@ -84,8 +84,8 @@ def main():
     valid_dataset = ComparisonDrugProteinDataset(args.valid_dataset)
 
     cfxn = lambda x: collate_fn_triplet(x, prots_are_sequences=True)
-    train_dataloader = DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=cfxn)
-    valid_dataloader = DataLoader(valid_dataset, args.batch_size, shuffle=True, collate_fn=cfxn)
+    train_dataloader = DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=cfxn, drop_last=True)
+    valid_dataloader = DataLoader(valid_dataset, args.batch_size, shuffle=True, collate_fn=cfxn, drop_last=True)
 
     loss_fxn = nn.CrossEntropyLoss()
 
@@ -105,7 +105,7 @@ def main():
 
     if os.path.isfile(args.dir + '/model_best.pt'):
         writer.add_text("Log", "Previous Model found.  Attempting to load previous best model...")
-        model_param_dict = torch.load('models/model_best.pt')
+        model_param_dict = torch.load(args.dir + 'model_best.pt')
         model.load_state_dict(model_param_dict)
         writer.add_text("Log", "Succesfully loaded previous model")
 
