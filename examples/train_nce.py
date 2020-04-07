@@ -137,21 +137,26 @@ def main():
                 total_train_loss += l
                 torch.cuda.empty_cache()
 
-        model.eval()
-        total_valid_loss = 0
-        with torch.no_grad():
-            for i, batch in enumerate(valid_dataloader):
-                output = run_model_on_batch(model, batch, device=device).squeeze(-1)
-                targets = get_targets(batch, device)
-                loss = loss_fxn(output, targets)
-                total_valid_loss += loss.item()
+            if i % 1000 == 0:
+                model.eval()
+                total_valid_loss = 0
+                with torch.no_grad():
+                    for i, batch in enumerate(valid_dataloader):
+                        output = run_model_on_batch(model, batch, device=device).squeeze(-1)
+                        targets = get_targets(batch, device)
+                        loss = loss_fxn(output, targets)
+                        total_valid_loss += loss.item()
 
-        avg_train_loss = total_train_loss / len(train_dataset)
-        avg_valid_loss = total_valid_loss / len(valid_dataset)
-        print("Epoch {} Complete. Train loss: {}.  Valid loss: {}.".format(
-            n, avg_train_loss, avg_valid_loss))
-        writer.add_scalar('training_loss', avg_train_loss, n)
-        writer.add_scalar('validation_loss', avg_valid_loss, n)
+                pairwise_auc(model,
+                             valid_dataloader, 'valid', i, writer,
+                             device='cpu')
+
+                avg_train_loss = total_train_loss / len(train_dataset)
+                avg_valid_loss = total_valid_loss / len(valid_dataset)
+                print("Epoch {} Complete. Train loss: {}.  Valid loss: {}.".format(
+                    n, avg_train_loss, avg_valid_loss))
+                writer.add_scalar('training_loss', avg_train_loss, n)
+                writer.add_scalar('validation_loss', avg_valid_loss, n)
 
         torch.save(model.state_dict(), args.dir + '/model_current.pt')
         if avg_valid_loss < best_valid_loss:
