@@ -13,6 +13,7 @@ from torch import optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from binding_prediction.models import MODELS_DICT
+from binding_prediction.evaluate import roc_auc
 import gc
 
 def _parse_args():
@@ -117,23 +118,22 @@ def main():
                 total_train_loss += l
                 torch.cuda.empty_cache()
 
-            if i % 100 == 0:
-                model.eval()
-                total_valid_loss = 0
-                with torch.no_grad():
-                    for i, batch in enumerate(valid_dataloader):
-                        output = run_model_on_batch(model, batch, device=device).squeeze(-1)
-                        targets = get_targets(batch, device)
-                        loss = loss_fxn(output, targets)
-                        total_valid_loss += loss.item()
-                auc = roc_auc(model, dataloader)
+        model.eval()
+        total_valid_loss = 0
+        with torch.no_grad():
+            for i, batch in enumerate(valid_dataloader):
+                output = run_model_on_batch(model, batch, device=device).squeeze(-1)
+                targets = get_targets(batch, device)
+                loss = loss_fxn(output, targets)
+                total_valid_loss += loss.item()
+        auc = roc_auc(model, valid_dataloader, 'nce', i, writer)
 
-                avg_train_loss = total_train_loss / len(train_dataset)
-                avg_valid_loss = total_valid_loss / len(valid_dataset)
-                print("Epoch {} Complete. Train loss: {}.  Valid loss: {}. AUC: {}".format(
-                    n, avg_train_loss, avg_valid_loss, auc))
-                writer.add_scalar('training_loss', avg_train_loss, n)
-                writer.add_scalar('validation_loss', avg_valid_loss, n)
+        avg_train_loss = total_train_loss / len(train_dataset)
+        avg_valid_loss = total_valid_loss / len(valid_dataset)
+        print("Epoch {} Complete. Train loss: {}.  Valid loss: {}. AUC: {}".format(
+            n, avg_train_loss, avg_valid_loss, auc))
+        writer.add_scalar('training_loss', avg_train_loss, n)
+        writer.add_scalar('validation_loss', avg_valid_loss, n)
 
         torch.save(model.state_dict(), args.dir + '/model_current.pt')
         if avg_valid_loss < best_valid_loss:

@@ -1,9 +1,10 @@
 import numpy as np
 import pandas as pd
 import torch
-from poplar.util import encode, tokenize
-from binding_model.model_utils import run_model_on_batch, run_model_on_mixed_batch, get_targets
-from sklearn.metrics import roc_curve
+from binding_prediction.model_utils import (run_model_on_batch,
+                                            run_model_on_mixed_batch, get_targets)
+from sklearn.metrics import roc_curve, roc_auc_score
+import matplotlib.pyplot as plt
 
 
 # Global evaluation metrics
@@ -24,7 +25,7 @@ def mrr(model, dataloader):
     """
     pass
 
-def roc_auc(binding_model, dataloader, name, it, writer):
+def roc_auc(binding_model, dataloader, name, it, writer, device='cuda'):
     """ ROC AUC
 
     Parameters
@@ -40,15 +41,22 @@ def roc_auc(binding_model, dataloader, name, it, writer):
     """
     outs, tars = [], []
     with torch.no_grad():
-        for i, batch in enumerate(valid_dataloader):
+        for i, batch in enumerate(dataloader):
             output = run_model_on_batch(binding_model, batch, device=device).squeeze(-1)
             targets = get_targets(batch, device)
-            out = output.detach().numpy()
-            tar = targets.detach().numpy()
+            out = output.cpu().detach().numpy().ravel()
+            tar = targets.cpu().detach().numpy().ravel()
             outs += list(out)
             tars += list(tar)
-    auc = roc_curve(tars, outs)
-    writer.add_scalar(f'{name}/AUC', auc, it)
+
+    fpr, tpr, thresholds = roc_curve(tars, outs)
+    fig, ax = plt.subplots()
+    ax.plot(fpr, tpr)
+    ax.set_xlabel('fpr')
+    ax.set_ylabel('tpr')
+    writer.add_figure(f'{name}/AUC', fig, it)
+    auc = roc_auc_score(tars, outs)
+    return auc
 
 
 def pairwise_auc(binding_model,
