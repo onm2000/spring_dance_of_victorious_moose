@@ -31,7 +31,8 @@ class BindingModel(torch.nn.Module):
         super(BindingModel, self).__init__()
         self.in_graph = nn.Linear(in_channels_graph, merge_channels_graph)
         self.in_prot = nn.Linear(in_channels_prot, merge_channels_prot)
-        self.gcs_stack = GraphAndConvStack(merge_channels_graph + merge_channels_prot, hidden_channel_list,
+        self.gcs_stack = GraphAndConvStack(merge_channels_graph + merge_channels_prot,
+                                           hidden_channel_list,
                                            out_channels, conv_kernel_sizes,
                                            nonlinearity, layer_cls)
         self.merge_graph_w_sequences = MergeSnE1()
@@ -92,6 +93,7 @@ class PosBindingModel(nn.Module):
             Filepath of the pretrained model.
         """
         self.bm.lm = cls(path, device=device)
+
 
 class GraphAndConvStack(nn.Module):
     """
