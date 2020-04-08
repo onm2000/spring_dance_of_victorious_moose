@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 import torch
 from poplar.util import encode, tokenize
+from binding_model.model_utils import run_model_on_batch, run_model_on_mixed_batch, get_targets
+from sklearn.metrics import roc_curve
 
 
 # Global evaluation metrics
@@ -22,7 +24,7 @@ def mrr(model, dataloader):
     """
     pass
 
-def roc_auc(model, dataloader, k=10):
+def roc_auc(binding_model, dataloader, name, it, writer):
     """ ROC AUC
 
     Parameters
@@ -34,18 +36,23 @@ def roc_auc(model, dataloader, k=10):
 
     Returns
     -------
-    float : average AUC
-
-    TODO
-    ----
-    Make sure that the test/validation dataset are
-    sorted by (1) taxonomy then by (2) protein1.
+    float : Area under the curve
     """
-    pass
+    outs, tars = [], []
+    with torch.no_grad():
+        for i, batch in enumerate(valid_dataloader):
+            output = run_model_on_batch(binding_model, batch, device=device).squeeze(-1)
+            targets = get_targets(batch, device)
+            out = output.detach().numpy()
+            tar = targets.detach().numpy()
+            outs += list(out)
+            tars += list(tar)
+    auc = roc_curve(tars, outs)
+    writer.add_scalar(f'{name}/AUC', auc, it)
+
 
 def pairwise_auc(binding_model,
-                 dataloader, name, it, writer,
-                 device='cpu'):
+                 dataloader, name, it, writer):
     """ Pairwise AUC comparison
 
     Parameters
@@ -66,20 +73,22 @@ def pairwise_auc(binding_model,
     Returns
     -------
     float : average AUC
+
+    Notes
+    -----
+    This assumes that the dataloader can return positive / negative samples.
     """
     with torch.no_grad():
         rank_counts = 0
-        for j, (gene, pos, rnd, tax, protid) in enumerate(dataloader):
-            gv = binding_model.encode([gene])
-            pv = binding_model.encode([pos])
-            nv = binding_model.encode([rnd])
-            pred_pos = binding_model.predict(gv, pv)
-            pred_neg = binding_model.predict(gv, nv)
-            score = torch.sum(pred_pos > pred_neg).item()
+        for j, batch in enumerate(dataloader):
+            res = run_model_on_mixed_batch(binding_model, batch)
+            pn, pa, nn, na, s = res
+            pv = binding_model.forward(pa, pn, s)
+            nv = binding_model.forward(na, nn, s)
+            score = torch.sum(pv > pn).item()
             rank_counts += score
 
         tpr = rank_counts / j
-        print(f'rank_counts {rank_counts}, tpr {tpr}, iteration {it}')
-        writer.add_scalar(f'{name}/pairwise/TPR', tpr, it)
+        writer.add_scalar(f'{name}/pairwise_TPR', tpr, it)
 
     return tpr

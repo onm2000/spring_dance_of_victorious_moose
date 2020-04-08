@@ -6,6 +6,8 @@ import datetime
 from torch import nn
 from binding_prediction.models import BindingModel
 from binding_prediction.dataset import DrugProteinDataset, collate_fn
+from binding_prediction.summary import initialize_logging
+from binding_prediction.model_utils import run_model_on_batch, get_targets
 from binding_prediction import pretrained_language_models
 from torch import optim
 from torch.utils.data import DataLoader
@@ -49,28 +51,6 @@ def _parse_args():
     return args
 
 
-def run_model_on_batch(model, batch, device='cuda'):
-    adj_mat = batch['adj_mat'].to(device=device)
-    features = batch['node_features'].to(device=device)
-    sequences = batch['protein']
-    out_features = model(adj_mat, features, sequences)
-    return out_features
-
-
-def get_targets(batch, device):
-    return batch['is_true'].to(device=device).float()
-
-
-def initialize_logging(root_dir='./', logging_path=None):
-    if logging_path is None:
-        basename = "logdir"
-        suffix = datetime.datetime.now().strftime("%y%m%d_%H%M%S")
-        logging_path = "_".join([basename, suffix])
-    full_path = root_dir + logging_path
-    writer = SummaryWriter(full_path)
-    return writer
-
-
 def main():
     args = _parse_args()
 
@@ -89,8 +69,8 @@ def main():
 
     lm, path = pretrained_language_models[args.lmarch]
 
-    train_dataset = DrugProteinDataset(args.train_dataset, prob_fake=0.5)
-    valid_dataset = DrugProteinDataset(args.valid_dataset, prob_fake=0.5)
+    train_dataset = DrugProteinDataset(args.train_dataset, prob_fake=0.5, precompute=False)
+    valid_dataset = DrugProteinDataset(args.valid_dataset, prob_fake=0.5, precompute=False)
 
     cfxn = lambda x: collate_fn(x, prots_are_sequences=True)
     train_dataloader = DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=cfxn)
@@ -137,7 +117,7 @@ def main():
                 total_train_loss += l
                 torch.cuda.empty_cache()
 
-            if i % 1000 == 0:
+            if i % 100 == 0:
                 model.eval()
                 total_valid_loss = 0
                 with torch.no_grad():
@@ -146,15 +126,12 @@ def main():
                         targets = get_targets(batch, device)
                         loss = loss_fxn(output, targets)
                         total_valid_loss += loss.item()
-
-                pairwise_auc(model,
-                             valid_dataloader, 'valid', i, writer,
-                             device='cpu')
+                auc = roc_auc(model, dataloader)
 
                 avg_train_loss = total_train_loss / len(train_dataset)
                 avg_valid_loss = total_valid_loss / len(valid_dataset)
-                print("Epoch {} Complete. Train loss: {}.  Valid loss: {}.".format(
-                    n, avg_train_loss, avg_valid_loss))
+                print("Epoch {} Complete. Train loss: {}.  Valid loss: {}. AUC: {}".format(
+                    n, avg_train_loss, avg_valid_loss, auc))
                 writer.add_scalar('training_loss', avg_train_loss, n)
                 writer.add_scalar('validation_loss', avg_valid_loss, n)
 

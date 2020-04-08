@@ -94,6 +94,7 @@ class PosBindingModel(nn.Module):
         """
         self.bm.lm = cls(path, device=device)
 
+
 class GraphAndConvStack(nn.Module):
     """
     Stack of graph and E(1) convolutional layers.

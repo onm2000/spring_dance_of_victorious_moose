@@ -48,28 +48,6 @@ def _parse_args():
     return args
 
 
-def run_model_on_batch(model, batch, device='cuda'):
-
-    pos_nodes = batch['pos_node_features'].to(device=device)
-    pos_adj = batch['pos_adj_mat'].to(device=device)
-    neg_nodes = batch['neg_node_features'].to(device=device)
-    neg_adj = batch['neg_adj_mat'].to(device=device)
-    sequences = batch['protein']
-
-    loss = model(pos_adj, pos_nodes,
-                 neg_adj, neg_nodes, sequences)
-    return loss
-
-
-def initialize_logging(root_dir='./', logging_path=None):
-    if logging_path is None:
-        basename = "logdir"
-        suffix = datetime.datetime.now().strftime("%y%m%d_%H%M%S")
-        logging_path = "_".join([basename, suffix])
-    full_path = root_dir + logging_path
-    writer = SummaryWriter(full_path)
-    return writer
-
 
 def main():
     args = _parse_args()
