@@ -140,7 +140,7 @@ def validate(args, model, valid_dataset, valid_dataloader, loss_fxn, n, best_val
             tar = targets.cpu().detach().numpy().ravel()
             outs += list(out)
             tars += list(tar)
-    auc = roc_auc(outs, tars, 'nce', n, writer)
+    auc = roc_auc(tars, outs, 'nce', n, writer)
 
     avg_valid_loss = total_valid_loss / len(valid_dataset)
     print("Epoch {} Complete. Valid loss: {}. AUC: {}".format(
