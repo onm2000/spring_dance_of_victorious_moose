@@ -3,11 +3,12 @@ import argparse
 import os
 import pickle
 import datetime
+import numpy as np
 from torch import nn
 from binding_prediction.models import BindingModel
 from binding_prediction.dataset import ComparisonDrugProteinDataset, collate_fn_triplet
 from binding_prediction import pretrained_language_models
-from .train_nce import get_targets, run_model_on_batch, initialize_logging
+from train_nce import get_targets, run_model_on_batch, initialize_logging
 from torch import optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -145,8 +146,13 @@ def validate(args, model, valid_dataset, valid_dataloader, loss_fxn, n, best_val
             targets = get_softmax_targets(batch, device)
             loss = loss_fxn(output, targets)
             total_valid_loss += loss.item()
-            out = output.cpu().detach().numpy().ravel()
-            tar = targets.cpu().detach().numpy().ravel()
+            output = nn.functional.softmax(output, dim=-1)
+            output = output.cpu().detach().numpy()
+            targets = targets.cpu().detach().numpy()
+            tar = np.zeros_like(output)
+            tar[np.arange(len(targets)), targets] = 1
+            out = output.ravel()
+            tar = tar.ravel()
             outs += list(out)
             tars += list(tar)
     auc = roc_auc(tars, outs, 'softmax', n, writer)
