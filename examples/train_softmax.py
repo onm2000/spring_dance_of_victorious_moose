@@ -7,11 +7,12 @@ from torch import nn
 from binding_prediction.models import BindingModel
 from binding_prediction.dataset import ComparisonDrugProteinDataset, collate_fn_triplet
 from binding_prediction import pretrained_language_models
-from train_nce import get_targets, run_model_on_batch, initialize_logging
+from .train_nce import get_targets, run_model_on_batch, initialize_logging
 from torch import optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from binding_prediction.models import MODELS_DICT
+from binding_prediction.evaluate import roc_auc
 
 
 def _parse_args():
@@ -25,6 +26,8 @@ def _parse_args():
                         help='Training dataset')
     parser.add_argument('--valid_dataset', '-v', type=str, default='data/molecules_valid_qm9.json',
                         help='Validation dataset')
+    parser.add_argument('--val_after', type=int, default=-1, help='number of iterations to validate after, '
+                                                            'default of -1 corresponds to validating after every epoch')
     parser.add_argument('--model_name', choices=['DecomposableAttentionModel', 'BindingModel'],
                         default='BindingModel')
     parser.add_argument('--merge_molecule_channels', '-m', type=int, default=10,
@@ -111,7 +114,7 @@ def main():
 
     optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate)
     best_valid_loss = 1E8
-
+    total_iter = 0
     for n in range(args.num_epoch):
         model.train()
         for i, batch in enumerate(train_dataloader):
@@ -124,26 +127,43 @@ def main():
             if i % 10 == 0:
                 print("Batch {}/{}.  Batch loss: {}".format(i, len(train_dataloader), loss.item()))
                 writer.add_scalar('train_loss', loss.item())
+            if args.val_after > 0 and total_iter % args.val_after == 0:
+                best_valid_loss = validate(args, model, valid_dataset, valid_dataloader, loss_fxn, total_iter,
+                         best_valid_loss, writer, device)
+        if args.val_after == -1:
+            best_valid_loss = validate(args, model, valid_dataset, valid_dataloader, loss_fxn, n,
+                                       best_valid_loss, writer, device)
 
-        model.eval()
-        total_valid_loss = 0
-        with torch.no_grad():
-            for i, batch in enumerate(valid_dataloader):
-                output = run_model_on_softmax_batch(model, batch, device=device).squeeze(-1)
-                targets = get_softmax_targets(batch, device)
-                loss = loss_fxn(output, targets)
-                total_valid_loss += loss.item()
 
-        avg_valid_loss = total_valid_loss / len(valid_dataset)
-        print("Epoch {} Complete.  Valid loss: {}.".format(n, avg_valid_loss))
-        writer.add_scalar('validation_loss', avg_valid_loss)
+def validate(args, model, valid_dataset, valid_dataloader, loss_fxn, n, best_valid_loss, writer, device):
+    model.eval()
+    total_valid_loss = 0
+    outs, tars = [], []
+    with torch.no_grad():
+        for i, batch in enumerate(valid_dataloader):
+            output = run_model_on_softmax_batch(model, batch, device=device).squeeze(-1)
+            targets = get_softmax_targets(batch, device)
+            loss = loss_fxn(output, targets)
+            total_valid_loss += loss.item()
+            out = output.cpu().detach().numpy().ravel()
+            tar = targets.cpu().detach().numpy().ravel()
+            outs += list(out)
+            tars += list(tar)
+    auc = roc_auc(outs, tars, 'softmax', n, writer)
 
-        torch.save(model.state_dict(), args.dir + '/model_current.pt')
-        if avg_valid_loss < best_valid_loss:
-            writer.add_text("Log", "Best validation loss achieved at %d." % n)
-            torch.save(model.state_dict(), args.dir + '/model_best.pt')
-            best_valid_loss = avg_valid_loss
+    avg_valid_loss = total_valid_loss / len(valid_dataset)
+    print("Epoch {} Complete.  Valid loss: {}. AUC: {}".format(n, avg_valid_loss, auc))
+    writer.add_scalar('validation_loss', avg_valid_loss)
+    writer.add_scalar('AUC', auc, n)
 
+
+    torch.save(model.state_dict(), args.dir + '/model_current.pt')
+    if avg_valid_loss < best_valid_loss:
+        writer.add_text("Log", "Best validation loss achieved at %d." % n)
+        torch.save(model.state_dict(), args.dir + '/model_best.pt')
+        best_valid_loss = avg_valid_loss
+
+    return best_valid_loss
 
 if __name__ == "__main__":
     main()

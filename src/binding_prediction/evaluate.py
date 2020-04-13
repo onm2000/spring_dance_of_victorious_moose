@@ -25,7 +25,7 @@ def mrr(model, dataloader):
     """
     pass
 
-def roc_auc(binding_model, dataloader, name, it, writer, device='cuda'):
+def roc_auc(tars, outs, name, it, writer):
     """ ROC AUC
 
     Parameters
@@ -39,15 +39,6 @@ def roc_auc(binding_model, dataloader, name, it, writer, device='cuda'):
     -------
     float : Area under the curve
     """
-    outs, tars = [], []
-    with torch.no_grad():
-        for i, batch in enumerate(dataloader):
-            output = run_model_on_batch(binding_model, batch, device=device).squeeze(-1)
-            targets = get_targets(batch, device)
-            out = output.cpu().detach().numpy().ravel()
-            tar = targets.cpu().detach().numpy().ravel()
-            outs += list(out)
-            tars += list(tar)
 
     fpr, tpr, thresholds = roc_curve(tars, outs)
     fig, ax = plt.subplots()
